@@ -22,6 +22,11 @@ The art is the supplied asset pack only. Nothing here draws artwork.
 4. Run `npm run check:live -- https://your-app.vercel.app` to confirm the keys reached
    the functions and the schema is applied.
 
+A Hobby team with a private repository only builds commits whose author is the team
+owner. A commit made by a bot or another account is reported as "blocked because the
+commit author did not have contributing access", so author commits with the same Git
+identity as your Vercel login, or upgrade the project to Pro.
+
 Secrets belong in the Vercel dashboard, never in a committed file. For local work,
 `cp .env.example .env` and fill that copy in: `.env` is git-ignored, and `.env.example`
 holds only placeholders.
