@@ -30,7 +30,11 @@ function decodeEntities(text) {
 }
 
 function stripTags(text) {
-  return decodeEntities(String(text || '').replace(/<[^>]*>/g, ' '))
+  // Real BBC items wrap <title> and <description> in CDATA. The wrapper has to be
+  // unwrapped before tags are stripped: `<[^>]*>` would otherwise swallow the whole
+  // block, because `<![CDATA[headline]]>` contains no `>` until its closing `]]>`.
+  const unwrapped = String(text || '').replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1');
+  return decodeEntities(unwrapped.replace(/<[^>]*>/g, ' '))
     .replace(/\s+/g, ' ')
     .trim();
 }

@@ -10,6 +10,7 @@
   "scripts": {
     "dev": "node tools/api_server.js 3000",
     "check": "node tools/check_syntax.js",
-    "test:api": "node tools/test_api.js"
+    "test:api": "node tools/test_api.js",
+    "check:live": "node tools/check_live.js"
   }
 }

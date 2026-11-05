@@ -166,7 +166,7 @@ const server = http.createServer(async (req, res) => {
     res.end(`<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0"><channel>
   <title>BBC News</title>
-  <item><title>Village wins regional gardening prize</title><description>The tomatoes were described as exceptional.</description><link>https://www.bbc.co.uk/news/test-1</link><pubDate>Wed, 04 Nov 2026 09:00:00 GMT</pubDate></item>
+  <item><title><![CDATA[Village wins regional gardening prize]]></title><description><![CDATA[The tomatoes were described as "exceptional".]]></description><link>https://www.bbc.co.uk/news/test-1?at_medium=RSS&amp;at_campaign=rss</link><pubDate>Wed, 04 Nov 2026 09:00:00 GMT</pubDate></item>
   <item><title>New chip promises cheaper phones</title><description>A technology story about a processor.</description><link>https://www.bbc.co.uk/news/test-2</link><pubDate>Wed, 04 Nov 2026 10:00:00 GMT</pubDate></item>
   <item><title>Scientists find a quieter species of bee</title><description>Researchers recorded the bee in a meadow.</description><link>https://www.bbc.co.uk/news/test-3</link><pubDate>Wed, 04 Nov 2026 11:00:00 GMT</pubDate></item>
 </channel></rss>`);

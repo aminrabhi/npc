@@ -77,6 +77,24 @@ npm run dev               # http://localhost:3000
 `tools/api_server.js` serves the static village and mounts the real API routes, reading
 `.env` itself. There are no npm dependencies.
 
+### 5. Verify a real deployment
+
+```bash
+npm run check:live -- https://your-app.vercel.app
+```
+
+It reads only: no rows are written and no transcript is saved. It reports, with the fix
+for each failure:
+
+1. whether `GROQ_API_KEY` and the Supabase keys reached the functions,
+2. whether the configured model actually answers (it prints the real line it got back,
+   the model name and the token usage),
+3. whether `supabase/schema.sql` has been applied, by reading each of the five tables,
+4. whether BBC headlines are loading.
+
+Run it once after the first deploy, and again whenever a key is rotated. Four green
+lines mean the village is talking with real Groq lines and persisting for real.
+
 ## The important distinction
 
 **Automatic**, during ordinary simulation, with no user interaction:
@@ -149,6 +167,7 @@ One debug surface, as before: the tile editor panel. It now has two extra button
 ```bash
 npm run check        # syntax-check every module and route
 npm run test:api     # API routes against local Groq/Supabase/BBC test doubles
+npm run check:live   # a real deployment with real keys (see Setup, step 5)
 ```
 
 `tools/test_api.js` starts its own doubles (`tools/mock_backends.js`) and two servers,

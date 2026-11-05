@@ -247,6 +247,15 @@ try {
   const cached = await (await fetch(`${base}/api/news`)).json();
   check('second request served from cache', cached.cached === true && cached.items.length === 3);
 
+  // The real BBC feed wraps titles and descriptions in CDATA. That wrapper used to be
+  // swallowed as if it were a tag, which emptied every headline on a live feed while a
+  // plain-text test feed still passed.
+  const cdata = news.items.find((item) => item.headline === 'Village wins regional gardening prize');
+  check('CDATA headline survives tag stripping', !!cdata);
+  check('CDATA summary keeps its words', !!cdata && cdata.summary.includes('exceptional'));
+  check('no CDATA residue in any item', news.items.every((item) => !/CDATA|\]\]>/.test(`${item.headline} ${item.summary}`)));
+  check('entity-escaped link decoded', news.items.some((item) => item.url.includes('at_medium=RSS')));
+
   console.log('\nunconfigured persistence');
   const bareMemory = await post(`${bare}/api/memories`, { memories: memoryRows });
   const bareMemoryBody = await bareMemory.json();
