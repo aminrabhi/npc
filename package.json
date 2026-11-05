@@ -3,7 +3,7 @@
   "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "Sunnyside Village - a pixel village whose villagers live, talk and remember.",
+  "description": "Simulora - a pixel village whose villagers live, talk and remember.",
   "engines": {
     "node": ">=20"
   },

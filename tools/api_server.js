@@ -155,7 +155,7 @@ const host = process.env.HOST || '0.0.0.0';
 await loadEnv();
 
 server.listen(port, host, () => {
-  console.log(`Sunnyside Village on http://${host}:${port}`);
+  console.log(`Simulora on http://${host}:${port}`);
   console.log(`  Groq: ${process.env.GROQ_API_KEY ? `configured (${process.env.GROQ_MODEL || 'allam-2-7b'})` : 'not configured - conversations run offline'}`);
   console.log(`  Supabase: ${process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY ? 'configured' : 'not configured - memories stay local'}`);
 });

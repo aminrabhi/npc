@@ -1,4 +1,4 @@
-# Sunnyside Village
+# Simulora
 
 A pixel village where ten villagers live out a day: walking, watching clouds, chilling
 in their own rooms, sleeping in their own beds, and talking to each other. Part 1 built

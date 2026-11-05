@@ -82,7 +82,7 @@ async function fetchFeed(feed, timeoutMs = 6500) {
   try {
     const res = await fetch(feed.url, {
       headers: {
-        'User-Agent': 'SunnysideVillage/2.0 (+village simulation; RSS headlines only)',
+        'User-Agent': 'Simulora/2.0 (+village simulation; RSS headlines only)',
         Accept: 'application/rss+xml, application/xml, text/xml',
       },
       signal: controller.signal,

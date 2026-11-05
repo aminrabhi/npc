@@ -1,4 +1,4 @@
--- Sunnyside Village, part 2: persistent social state.
+-- Simulora, part 2: persistent social state.
 --
 -- Run this once in the Supabase SQL editor (or `supabase db push`). It is written to
 -- be safe on a project that already has tables: everything is `if not exists`, so

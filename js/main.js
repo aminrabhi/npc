@@ -1,4 +1,4 @@
-// Sunnyside Village: a small village drawn from the asset pack's tileset, with
+// Simulora: a small village drawn from the asset pack's tileset, with
 // villagers assembled from the pack's separate body and hair strips.
 // The whole map is shown at once, scaled to fit the window.
 
@@ -240,6 +240,48 @@ async function init() {
     // a friendship pulls two villagers together; a grudge keeps them apart
     partnerAppeal: (a, b) => state.relationships.appeal(a, b),
   });
+  // Open the site with every villager where they sleep: standing on their own bed in
+  // the room that bed belongs to, instead of in the middle of the street.
+  function spawnAtBeds() {
+    const homes = state.homes;
+    if (!homes) return;
+    const T = village.tileSize;
+    state.npcs.forEach((npc, ordinal) => {
+      const id = npc.config ? npc.config.id : null;
+      if (!id) return;
+      const assignment = homes.assignment(id, ordinal);
+      const bed = assignment.bed ? homes.bed(assignment.bed) : null;
+      const record = assignment.room !== null ? homes.room(assignment.room) : null;
+      const room = record ? village.rooms[record.index] : null;
+      if (!bed || !room) return;
+      const point = { x: bed.stand[0] * T, y: bed.stand[1] * T };
+      npc.room = room;
+      npc.x = point.x;
+      npc.y = point.y;
+      npc.facing = bed.facing;
+      npc.path = [];
+      npc.moving = false;
+      npc.insideTarget = point;
+      npc.insideTimer = 1e9;
+      npc.sim = {
+        state: 'chilling',
+        timer: 6 + rng() * 6,
+        dialogue: null,
+        partner: null,
+        roomIndex: room.index,
+        bed,
+        seated: true,
+        failTime: 0,
+        bedTime: 0,
+        approachTime: 0,
+        previous: null,
+        visitRoom: null,
+        session: null,
+      };
+    });
+  }
+  spawnAtBeds();
+
   state.hud = createHud({ village, clock: state.clock, weather: state.weather });
 
   state.editor = createEditor({
