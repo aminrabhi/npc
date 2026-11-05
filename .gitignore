@@ -1,0 +1,16 @@
+# Local tooling (screenshot browser + deps), not part of the project
+.venv-shot/
+.browser_libs/
+apt/
+__pycache__/
+
+# Secrets: the real values live in Vercel environment variables, never in git.
+.env
+.env.local
+.env.*.local
+.dev.vars
+!.env.example
+
+# Dependency and deployment scratch
+node_modules/
+.vercel/

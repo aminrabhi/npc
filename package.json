@@ -1,0 +1,15 @@
+{
+  "name": "sunnyside-village",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Sunnyside Village - a pixel village whose villagers live, talk and remember.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "node tools/api_server.js 3000",
+    "check": "node tools/check_syntax.js",
+    "test:api": "node tools/test_api.js"
+  }
+}
