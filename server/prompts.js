@@ -123,9 +123,11 @@ export function buildMessages({
     me.style ? `Speaking style: ${me.style}.` : '',
     `Keep it to one or two short sentences, at most ${MAX_WORDS} words and under ${LINE_BUDGET.chars} characters in total: a speech bubble holds two lines of about ${LINE_BUDGET.lineChars} characters. If a thought needs more room, reword it shorter. Never stop mid-sentence, never trail off with an ellipsis. Ordinary village speech.`,
     'If you have two things to say, put the second on a new line. A villager never writes a paragraph.',
-    'No stage directions, no actions, no emojis, no quotation marks, no narration.',
+    'No stage directions, no actions in brackets, asterisks or angle brackets, no emojis, no quotation marks, no narration.',
+    'Never write your own name or a label like "Name:" before your words.',
     'Never mention AI, models, prompts, servers or the fact that you are simulated.',
-    'Never repeat a line you have already said in this conversation.',
+    'Every line must add something: answer, ask, disagree, reveal, tease. Never restate, rephrase or summarise a point that has already been made, by either of you.',
+    'If you have nothing new to add, say a short goodbye and stop. A conversation is allowed to end early; never pad it to keep it going.',
   ].filter(Boolean).join('\n');
 
   const scene = [];
@@ -159,9 +161,9 @@ export function buildMessages({
   if (mode === 'opening') {
     scene.push(`You have just walked up to ${them.name}. Say the first thing that comes to mind, in character.`);
   } else if (mode === 'closing') {
-    scene.push(`This is the last thing you will say before you both get back to your day. Wrap it up naturally, no new topic.`);
+    scene.push(`This is the last thing you will say before you both get back to your day: a short goodbye, no new topic.`);
   } else {
-    scene.push(`Reply to ${them.name}'s last line. Respond to what they actually said.`);
+    scene.push(`Reply to ${them.name}'s last line. Respond to what they actually said, with something they do not already know. If the point has been made already, say a short goodbye and nothing else.`);
   }
 
   scene.push(`Write only ${me.name}'s line: one or two short sentences, at most ${MAX_WORDS} words and under ${LINE_BUDGET.chars} characters, two lines at most. Tighten the wording until it fits.`);

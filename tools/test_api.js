@@ -114,6 +114,12 @@ try {
   const runaway = sanitiseLine('word '.repeat(200));
   check('a runaway reply is capped', runaway.replace(/\n/g, ' ').length <= 110, `${runaway.length}`);
   check('a third line is dropped', sanitiseLine('One thing.\nTwo things.\nThree things.').split('\n').length === 2);
+  const stage = sanitiseLine('<acts confused> Tiny: I thought we agreed about the fence.');
+  check('stage directions and speaker labels are stripped', !/[<>]/.test(stage) && !/Tiny/.test(stage) && /fence/.test(stage), stage);
+  const secondLabel = sanitiseLine('Morning, you are up early.\nTiny: The fence is broken again.');
+  check('a speaker label is stripped from any line, not only the first', !/Tiny/.test(secondLabel), secondLabel);
+  const emoji = sanitiseLine('The tomatoes are doing well 😀🍅 today.');
+  check('emoji are stripped from a line', !/[\u{1F300}-\u{1FAFF}]/u.test(emoji) && /tomatoes/.test(emoji), emoji);
   const split = sanitiseMessages('The weather has been strange lately and the tomatoes are late this year. I was thinking we should plant them earlier before the frost comes in and cover the beds at night so nothing freezes.');
   check('a long reply becomes a second message, not a cut-off', split.length >= 2, `${split.length}`);
   check('each split message still fits a bubble', split.every((part) => part.length <= 110), JSON.stringify(split));

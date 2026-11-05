@@ -137,8 +137,16 @@ export function sanitiseMessages(raw, { maxChars = LINE_BUDGET.chars, maxMessage
   // *does something* and [does something]
   text = text.replace(/\*[^*]{1,80}\*/g, ' ');
   text = text.replace(/\[[^\]]{1,80}\]/g, ' ');
-  // a leading "Leonda:" or "LEONDA -"
-  text = text.replace(/^\s*[A-Z][\w' .-]{0,23}\s*[:\-—]\s*/, '');
+  // <acts confused>, <smiles sadly> - the simulation draws the villager, it never
+  // needs the model to describe what they are doing
+  text = text.replace(/<[^<>]{1,80}>/g, ' ');
+  // **bold** / __stress__ markdown has no place in speech
+  text = text.replace(/\*\*([^*]{1,80})\*\*/g, '$1');
+  text = text.replace(/__([^_]{1,80})__/g, '$1');
+  // (sighs) asides, but only a plain lowercase one: (the apples) stays
+  text = text.replace(/\(\s*[a-z][a-z' -]{0,30}\s*\)/g, ' ');
+  // emoji and pictographs, including variation selectors and zero-width joiners
+  text = text.replace(/[\u{1F000}-\u{1FAFF}\u{1F1E6}-\u{1F1FF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]/gu, ' ');
   // wrapping quotes
   text = text.replace(/^\s*["'“”‘’]+/, '').replace(/["'“”‘’]+\s*$/, '');
 
@@ -147,6 +155,8 @@ export function sanitiseMessages(raw, { maxChars = LINE_BUDGET.chars, maxMessage
   const paragraphs = text
     .split(/\n+/)
     .map((line) => line.replace(/[ \t]+/g, ' ').trim())
+    // "Tiny: ..." on any line, not only the first one
+    .map((line) => line.replace(/^[A-Z][\w' .-]{0,20}:\s*/, ''))
     .filter(Boolean);
   if (!paragraphs.length) return [];
 

@@ -12,8 +12,10 @@
 import { contextFor, profileFor } from './personalities.js';
 import { offlineLine } from './ai.js';
 
-const MIN_MESSAGES = 5;
-const MAX_MESSAGES = 10;
+// A chat is never padded to a length. Two villagers with nothing new to say part ways
+// after a couple of turns; one with a real thread to pull can run to eight.
+const MIN_TURNS = 2;
+const MAX_TURNS = 8;
 const APPROACH_LIMIT = 12; // seconds the pair may take to reach each other
 const SESSION_LIMIT = 95; // hard cap, so a stalled request cannot freeze a villager
 const MAX_FAILURES = 3; // consecutive model failures before the chat is closed
@@ -36,6 +38,50 @@ const CATEGORY_COOLDOWN = {
 function displayMs(text) {
   const length = String(text || '').replace(/\s+/g, ' ').trim().length;
   return Math.min(6800, Math.max(2400, 1000 + length * 55));
+}
+
+// "Not word for word, but the same point again" is what makes a village feel empty.
+// A line that mostly reuses the words of something already said adds nothing, so the
+// next request is steered to a goodbye instead of another lap around the subject.
+const STOP_WORDS = new Set([
+  'the', 'and', 'that', 'this', 'with', 'have', 'has', 'had', 'you', 'your', 'yours',
+  'for', 'but', 'not', 'are', 'was', 'were', 'they', 'them', 'then', 'there', 'here',
+  'what', 'when', 'who', 'why', 'how', 'just', 'like', 'about', 'from', 'into', 'been',
+  'being', 'would', 'could', 'should', 'will', 'shall', 'does', 'did', 'his', 'her',
+  'its', 'our', 'their', 'him', 'she', 'too', 'very', 'much', 'some', 'any', 'all',
+  'one', 'two', 'also', 'say', 'says', 'said', 'know', 'think', 'well', 'yeah', 'yes',
+]);
+
+function contentWords(text) {
+  return String(text || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9' ]+/g, ' ')
+    .split(/\s+/)
+    .filter((word) => word.length >= 3 && !STOP_WORDS.has(word));
+}
+
+function repeatsEarlier(session, text) {
+  const candidate = new Set(contentWords(text));
+  // a short line carries too little meaning to judge, and "Fair enough" twice is
+  // normal speech rather than a villager going in circles
+  if (candidate.size < 3) return false;
+  for (const message of session.messages) {
+    const previous = new Set(contentWords(message.text));
+    if (previous.size < 3) continue;
+    let shared = 0;
+    for (const word of candidate) if (previous.has(word)) shared += 1;
+    if (shared / Math.min(candidate.size, previous.size) >= 0.66) return true;
+  }
+  return false;
+}
+
+// A short goodbye is a legitimate ending: nothing is gained by restating a point both
+// of them already made.
+const FAREWELL = /\b(goodbye|bye|see you|see ya|take care|talk later|talk soon|catch you|until later|good day|good night|i should go|let you go|back to it|off you go|another time|that is all|that's all)\b/i;
+
+function isFarewell(text) {
+  const value = String(text || '').trim();
+  return value.length > 0 && value.length <= 140 && FAREWELL.test(value);
 }
 
 export function createConversations({
@@ -102,7 +148,7 @@ export function createConversations({
     if (!a || !b) return null;
 
     counter += 1;
-    const target = MIN_MESSAGES + Math.floor(rng() * (MAX_MESSAGES - MIN_MESSAGES + 1));
+    const target = MIN_TURNS + Math.floor(rng() * (MAX_TURNS - MIN_TURNS + 1));
 
     const profileA = profileFor(a);
     const profileB = profileFor(b);
@@ -251,6 +297,13 @@ export function createConversations({
 
     if (result.ok) {
       session.failures = 0;
+      // Nothing new to say: wrap the conversation up instead of letting them circle
+      // the same point. The next request is a closing line, so it ends on a goodbye.
+      if (mode !== 'closing' && turns(session) >= 2 && repeatsEarlier(session, result.text)) {
+        session.target = turns(session) + 1;
+        session.repeats = (session.repeats || 0) + 1;
+        return;
+      }
       // The model is asked to fit one bubble. When it still runs over, the rest is
       // spoken as another message after this one instead of being cut off.
       const parts = [result.text, ...(Array.isArray(result.extra) ? result.extra : [])].filter(Boolean);
@@ -259,7 +312,13 @@ export function createConversations({
         text,
         closing: mode === 'closing' && index === parts.length - 2,
       }));
-      addMessage(session, speakerId, parts[0], 'groq', mode === 'closing' && !session.followUps.length);
+      // a goodbye is the last thing said, so the pair can get back to their day
+      const farewell = mode !== 'opening' && isFarewell(parts[0]);
+      addMessage(session, speakerId, parts[0], 'groq', (mode === 'closing' || farewell) && !session.followUps.length);
+      if (farewell) {
+        finish(session, 'complete', 'said_goodbye');
+        return;
+      }
       if (mode === 'opening') {
         const list = recentOpeners.get(speakerId) || [];
         list.push(result.text);

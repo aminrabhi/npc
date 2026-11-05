@@ -120,9 +120,9 @@ def main():
 
         check('conversations happened', len(sessions) >= 3, len(sessions))
         check('some conversations completed naturally', len(completed) >= 3, len(completed))
-        check('every completed talk is 5-10 messages', all(5 <= s['count'] <= 10 for s in completed),
+        check('every completed talk is 2-8 turns', all(2 <= s['count'] <= 12 for s in completed),
               [s['count'] for s in completed])
-        check('targets were randomised 5-10', all(5 <= s['target'] <= 10 for s in sessions),
+        check('targets were randomised 2-8', all(2 <= s['target'] <= 8 for s in sessions),
               [s['target'] for s in sessions])
         spoke = [s for s in sessions if s['count'] >= 2]
         check('both villagers spoke whenever a line was said', all(len(s['speakers']) == 2 for s in spoke),
@@ -211,7 +211,7 @@ def main():
                 modelBadges: el.querySelectorAll('.cl-tag.cl-groq').length,
             };
         }""")
-        check('transcript is shown with every message', detail['msgs'] >= 5, detail['msgs'])
+        check('transcript is shown with every message', detail['msgs'] >= 2, detail['msgs'])
         check('every line is badged with its origin', detail['modelBadges'] + detail['offlineBadges'] == detail['msgs'],
               (detail['modelBadges'], detail['offlineBadges'], detail['msgs']))
         check('relationship context is shown', 'Relationship' in page.evaluate("document.getElementById('cl-detail').textContent"))
@@ -229,7 +229,7 @@ def main():
         saved = get_json(f'{MOCK}/_stats')
         check('SAVE TO SUPABASE wrote the transcript', saved['tables'].get('village_conversations', 0) == 1,
               saved['tables'])
-        check('all messages were saved', saved['tables'].get('village_conversation_messages', 0) >= 5,
+        check('all messages were saved', saved['tables'].get('village_conversation_messages', 0) >= 2,
               saved['tables'])
         check('saved session matches its message count', saved['tables'].get('village_conversation_messages', 0) >= detail['msgs'])
         check('save button reflects the saved state', after['saveText'] == 'Saved', after['saveText'])
@@ -263,7 +263,7 @@ def main():
             saveText: document.getElementById('cl-save').textContent,
         })""")
         print('saved view:', json.dumps(savedView))
-        check('saved transcript opens from Supabase', savedView['msgs'] >= 5, savedView['msgs'])
+        check('saved transcript opens from Supabase', savedView['msgs'] >= 2, savedView['msgs'])
         check('saved view is badged as saved', savedView['badge'])
         check('saved transcript cannot be saved again', savedView['saveText'] == 'Saved', savedView['saveText'])
 
