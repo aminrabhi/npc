@@ -89,9 +89,10 @@ async function request(method, path, { body, prefer, query, timeoutMs = 8000 } =
   if (!res.ok) {
     const message = payload && (payload.message || payload.error_description || payload.hint);
     const code = payload && payload.code;
-    // 42P01 = table missing: the schema has not been applied yet, which is a setup
-    // problem worth naming precisely.
-    if (code === '42P01' || (message && /does not exist/i.test(message))) {
+    // 42P01 / PGRST205 / "Could not find the table ... in the schema cache" all mean
+    // the schema has not been applied to this project yet (or PostgREST has not
+    // reloaded after it was applied). A setup problem worth naming precisely.
+    if (code === '42P01' || code === 'PGRST205' || (message && /does not exist|could not find the table/i.test(message))) {
       throw new HttpError(503, 'supabase_schema_missing', 'A village table is missing. Run supabase/schema.sql in the Supabase SQL editor.', {
         detail: String(message || '').slice(0, 160),
       });
