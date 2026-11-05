@@ -41,9 +41,46 @@ const BANNED = [
   /\bapi\b/i,
 ];
 
-export function sanitiseLine(raw, maxChars = 220) {
+// A speech bubble holds two lines of about 52 characters (four rows at the bubble's
+// width). Anything longer is re-flowed onto a second line or trimmed, so no line ever
+// runs off the screen.
+const MAX_LINE_CHARS = 52;
+const MAX_LINES = 2;
+
+function trimTo(text, limit) {
+  if (text.length <= limit) return text;
+  const cut = text.slice(0, limit);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > limit * 0.6 ? cut.slice(0, space) : cut).trim()}…`;
+}
+
+// Sentence-aware re-flow: keeps whole sentences where it can, splits on words when a
+// single sentence is too long, and stops after MAX_LINES.
+function packLines(paragraphs, maxLineChars, maxLines) {
+  const lines = [];
+  for (const paragraph of paragraphs) {
+    const sentences = paragraph.match(/[^.!?…]+[.!?…]+"?'?\)?\]?|[^.!?…]+$/g) || [paragraph];
+    for (const sentence of sentences) {
+      let rest = sentence.trim();
+      while (rest) {
+        if (lines.length >= maxLines) return { lines, truncated: true };
+        if (rest.length <= maxLineChars) {
+          lines.push(rest);
+          break;
+        }
+        let cut = rest.lastIndexOf(' ', maxLineChars);
+        if (cut < 20) cut = maxLineChars;
+        lines.push(rest.slice(0, cut).trim());
+        rest = rest.slice(cut).trim();
+      }
+    }
+  }
+  return { lines, truncated: false };
+}
+
+export function sanitiseLine(raw, maxChars = 110) {
   if (typeof raw !== 'string') return '';
-  let text = raw.replace(/\r/g, ' ').replace(/\n+/g, ' ');
+  let text = raw.replace(/\r/g, '');
 
   // fenced code / stray markup
   text = text.replace(/```[\s\S]*?```/g, ' ');
@@ -54,19 +91,41 @@ export function sanitiseLine(raw, maxChars = 220) {
   text = text.replace(/^\s*[A-Z][\w' .-]{0,23}\s*[:\-—]\s*/, '');
   // wrapping quotes
   text = text.replace(/^\s*["'“”‘’]+/, '').replace(/["'“”‘’]+\s*$/, '');
-  text = text.replace(/\s+/g, ' ').trim();
 
-  if (!text) return '';
-  if (BANNED.some((re) => re.test(text))) return '';
+  // The model is told to break a second thought onto a new line, so line breaks are
+  // kept (two at most) instead of being flattened into one long speech bubble.
+  const paragraphs = text
+    .split(/\n+/)
+    .map((line) => line.replace(/[ \t]+/g, ' ').trim())
+    .filter(Boolean)
+    .slice(0, MAX_LINES);
+  if (!paragraphs.length) return '';
 
-  if (text.length > maxChars) {
-    const cut = text.slice(0, maxChars);
-    const stop = Math.max(cut.lastIndexOf('. '), cut.lastIndexOf('! '), cut.lastIndexOf('? '));
-    text = stop > 60 ? cut.slice(0, stop + 1) : `${cut.slice(0, cut.lastIndexOf(' '))}…`;
+  const packed = packLines(paragraphs, MAX_LINE_CHARS, MAX_LINES);
+  let lines = packed.lines.filter(Boolean);
+  if (!lines.length) return '';
+  if (packed.truncated || lines.length > MAX_LINES) {
+    lines = lines.slice(0, MAX_LINES);
+    if (!/…$/.test(lines[lines.length - 1])) lines[lines.length - 1] = `${lines[lines.length - 1]}…`;
   }
+
+  // Hard ceiling on the whole line, so a runaway generation cannot fill the screen.
+  let budget = maxChars;
+  lines = lines
+    .map((line) => {
+      const keep = Math.max(0, Math.min(line.length, budget));
+      budget -= keep + 1;
+      return keep === line.length ? line : trimTo(line, keep);
+    })
+    .filter(Boolean);
+  if (!lines.length) return '';
+
+  const joined = lines.join('\n');
+  if (BANNED.some((re) => re.test(joined))) return '';
+
   // a villager's line is dialogue, never a paragraph
-  if (!/[.!?…]["'”’)]?$/.test(text)) text = `${text}.`;
-  return text;
+  if (!/[.!?…]["'”’)]?$/.test(joined)) return `${joined}.`;
+  return joined;
 }
 
 export async function chatCompletion({

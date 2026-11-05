@@ -9,6 +9,8 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { sanitiseLine } from '../server/groq.js';
+import { buildMessages } from '../server/prompts.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MOCK_PORT = 4210;
@@ -102,6 +104,20 @@ try {
   const bareStatus = await (await fetch(`${bare}/api/status`)).json();
   check('unconfigured server reports groq off', bareStatus.groq && bareStatus.groq.configured === false);
   check('unconfigured server names the missing vars', Array.isArray(bareStatus.missing) && bareStatus.missing.includes('GROQ_API_KEY'));
+
+  console.log('\nline shaping');
+  const twoLines = sanitiseLine('Morning, you are up early.\nThe tomatoes look good today.');
+  check('a reply with a break keeps both lines', twoLines.split('\n').length === 2, JSON.stringify(twoLines));
+  const longLine = sanitiseLine('I was thinking about the tomatoes and how the weather has been strange lately and whether we should plant them earlier this year before the frost comes in.');
+  check('a long reply is re-flowed, not one wide line', longLine.split('\n').length === 2, JSON.stringify(longLine));
+  check('no line is wider than a speech bubble', longLine.split('\n').every((line) => line.length <= 52), JSON.stringify(longLine));
+  const runaway = sanitiseLine('word '.repeat(200));
+  check('a runaway reply is capped', runaway.replace(/\n/g, ' ').length <= 110, `${runaway.length}`);
+  check('a third line is dropped', sanitiseLine('One thing.\nTwo things.\nThree things.').split('\n').length === 2);
+
+  const prompt = buildMessages({ speaker: { name: 'Mama Green' }, listener: { name: 'Timmy' }, mode: 'opening' });
+  check('prompt asks for one or two short sentences', /one or two short sentences/i.test(prompt[0].content));
+  check('prompt asks for a line break on a second thought', /new line/i.test(prompt[0].content));
 
   console.log('\nchat');
   const conversation = {

@@ -31,9 +31,11 @@ const CATEGORY_COOLDOWN = {
   enemy: 780,
 };
 
+// How long a bubble stays up: long enough for the typewriter to finish, plus a moment
+// to read it. Line breaks do not count, since they cost no speaking time.
 function displayMs(text) {
-  const length = String(text || '').length;
-  return Math.min(6400, Math.max(2100, 900 + length * 52));
+  const length = String(text || '').replace(/\s+/g, ' ').trim().length;
+  return Math.min(6800, Math.max(2400, 1000 + length * 55));
 }
 
 export function createConversations({

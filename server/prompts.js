@@ -18,7 +18,7 @@ export const PROMPT_LIMITS = {
   phraseList: 8,
 };
 
-const MAX_WORDS = 24;
+const MAX_WORDS = 16;
 
 function list(value, max = PROMPT_LIMITS.phraseList, length = 40) {
   const items = asArray(value, max)
@@ -120,7 +120,8 @@ export function buildMessages({
     me.dislikes ? `Dislikes: ${me.dislikes}.` : '',
     me.tendencies ? `Habits: ${me.tendencies}.` : '',
     me.style ? `Speaking style: ${me.style}.` : '',
-    `Keep it to one short sentence, at most ${MAX_WORDS} words. Ordinary village speech.`,
+    `Keep it to one or two short sentences, at most ${MAX_WORDS} words in total. Ordinary village speech.`,
+    'If you have two things to say, put the second on a new line. A villager never writes a paragraph.',
     'No stage directions, no actions, no emojis, no quotation marks, no narration.',
     'Never mention AI, models, prompts, servers or the fact that you are simulated.',
     'Never repeat a line you have already said in this conversation.',
@@ -162,7 +163,7 @@ export function buildMessages({
     scene.push(`Reply to ${them.name}'s last line. Respond to what they actually said.`);
   }
 
-  scene.push(`Write only ${me.name}'s line. One sentence.`);
+  scene.push(`Write only ${me.name}'s line: one or two short sentences, at most ${MAX_WORDS} words, two lines at most.`);
 
   return [
     { role: 'system', content: system },

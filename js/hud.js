@@ -123,7 +123,54 @@ export function createHud({ village, clock, weather, homes }) {
   }
 
   // A small speech bubble in the same visual language as the village's name labels.
-  function drawBubbles(ctx, npcs) {
+  //
+  // A line is wrapped to at most two rows, and the words arrive one character at a
+  // time. The bubble is laid out from the whole line up front so it never jumps in
+  // size while the text is still typing out.
+  const bubbles = new WeakMap();
+  const BUBBLE_FONT = '8px "Pixelify Sans", ui-monospace, monospace';
+  const BUBBLE_MAX_WIDTH = 116;
+  const BUBBLE_MAX_ROWS = 4;
+  const BUBBLE_LINE_HEIGHT = 11;
+  const BUBBLE_PAD_TOP = 4;
+  const REVEAL_CHARS_PER_SEC = 34;
+  const REVEAL_MAX_MS = 3200;
+
+  function wrapBubble(ctx, text, maxWidth, maxRows = BUBBLE_MAX_ROWS) {
+    const lines = [];
+    for (const paragraph of String(text).split(/\n+/)) {
+      if (lines.length > maxRows) break;
+      let current = '';
+      for (const word of paragraph.split(/\s+/).filter(Boolean)) {
+        const candidate = current ? `${current} ${word}` : word;
+        if (current && ctx.measureText(candidate).width > maxWidth) {
+          lines.push(current);
+          current = word;
+        } else {
+          current = candidate;
+        }
+      }
+      if (current) lines.push(current);
+    }
+    // A very long line still cannot grow the bubble without limit.
+    if (lines.length > maxRows) {
+      lines.length = maxRows;
+      if (!/…$/.test(lines[maxRows - 1])) lines[maxRows - 1] = `${lines[maxRows - 1].replace(/\s+\S*$/, '')}…`;
+    }
+    return lines;
+  }
+
+  function revealCount(npc, text, now) {
+    let state = bubbles.get(npc);
+    const stale = state && (state.text !== text || now - state.lastSeen > 300);
+    if (!state || stale) state = { text, startedAt: now, lastSeen: now };
+    state.lastSeen = now;
+    bubbles.set(npc, state);
+    const rate = Math.max(REVEAL_CHARS_PER_SEC / 1000, text.length / REVEAL_MAX_MS);
+    return Math.min(text.length, Math.max(1, Math.ceil((now - state.startedAt) * rate)));
+  }
+
+  function drawBubbles(ctx, npcs, now) {
     for (const npc of npcs) {
       const line = npc.sim && npc.sim.dialogue;
       if (!line) continue;
@@ -132,16 +179,24 @@ export function createHud({ village, clock, weather, homes }) {
       const py = Math.round(npc.y) - (isSleeping ? 26 : 24);
 
       ctx.save();
-      ctx.font = '8px "Pixelify Sans", ui-monospace, monospace';
+      ctx.font = BUBBLE_FONT;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      const width = ctx.measureText(line).width + 8;
-      const height = 12;
+
+      const text = String(line);
+      const lines = wrapBubble(ctx, text, BUBBLE_MAX_WIDTH);
+      if (!lines.length) {
+        ctx.restore();
+        continue;
+      }
+      const shown = revealCount(npc, text, now);
+      const width = Math.max(...lines.map((row) => ctx.measureText(row).width)) + 8;
+      const height = lines.length * BUBBLE_LINE_HEIGHT + 3;
+      const x = px - width / 2;
+      const y = py - height;
       ctx.fillStyle = 'rgba(23, 20, 42, 0.88)';
       ctx.strokeStyle = 'rgba(255, 233, 168, 0.55)';
       ctx.lineWidth = 1;
-      const x = px - width / 2;
-      const y = py - height;
       ctx.beginPath();
       ctx.rect(x, y, width, height);
       ctx.fill();
@@ -153,7 +208,15 @@ export function createHud({ village, clock, weather, homes }) {
       ctx.closePath();
       ctx.fill();
       ctx.fillStyle = '#fff4cf';
-      ctx.fillText(line, px, y + height / 2 - 0.5);
+      let budget = shown;
+      for (let i = 0; i < lines.length; i++) {
+        const row = lines[i];
+        const take = Math.max(0, Math.min(row.length, budget));
+        if (take > 0) {
+          ctx.fillText(row.slice(0, take), px, y + BUBBLE_PAD_TOP + i * BUBBLE_LINE_HEIGHT + BUBBLE_LINE_HEIGHT / 2 - 0.5);
+        }
+        budget -= row.length + 1;
+      }
       ctx.restore();
     }
   }
@@ -163,7 +226,7 @@ export function createHud({ village, clock, weather, homes }) {
     refresh: refreshReadout,
     draw(ctx, npcs) {
       drawAtmosphere(ctx);
-      drawBubbles(ctx, npcs || []);
+      drawBubbles(ctx, npcs || [], performance.now());
     },
     stop() {
       clearInterval(readoutTimer);
