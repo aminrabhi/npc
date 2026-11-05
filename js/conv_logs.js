@@ -1,12 +1,15 @@
-// Conversation Logs: the second extra button on the existing debug panel.
+// Conversation logs.
 //
-// Part 1 added "Sim" to the tile editor's toolbar; this adds "Logs" beside it, in the
-// same panel, so there is still one debug surface rather than two.
+// This used to be a button in the tile editor's toolbar. It now lives in the debug dock
+// (js/dock.js), so the live and recent conversations, the relationship context and the
+// saved transcripts are reachable whether or not either editor is open.
 //
 // The panel watches the simulation: live conversations, recent ones, full transcripts,
 // the relationship context and memories each one produced, and any failed model call.
 // It is also the only place a transcript can be written to Supabase, and the only
 // place previously saved transcripts are read back.
+
+import { ensureDock, focusPanel } from './dock.js';
 
 const REFRESH_MS = 1000;
 
@@ -45,20 +48,21 @@ export function createConvLogs({
   roster = [],
   endpoint = '/api/conversations',
 }) {
-  const editor = document.getElementById('editor');
-  if (!editor || !conversations) return null;
+  if (!conversations) return null;
 
-  const tools = editor.querySelector('.ed-tools');
+  const dock = ensureDock();
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'ed-btn';
   button.id = 'ed-logs';
+  button.dataset.panel = 'conv-logs';
   button.textContent = 'Logs';
-  button.title = 'Conversation logs and saved transcripts';
-  if (tools) tools.appendChild(button);
+  button.title = 'Conversation logs, relationships and saved transcripts';
+  dock.buttons.appendChild(button);
 
   const section = document.createElement('div');
   section.id = 'conv-logs';
+  section.className = 'dock-panel';
   section.hidden = true;
   section.innerHTML = `
     <div class="cl-head">
@@ -88,7 +92,7 @@ export function createConvLogs({
       <button type="button" class="ed-btn ed-primary" id="cl-save" disabled>Save to Supabase</button>
     </div>
   `;
-  editor.appendChild(section);
+  dock.panels.appendChild(section);
 
   const liveList = section.querySelector('#cl-live');
   const recentList = section.querySelector('#cl-recent');
@@ -498,6 +502,7 @@ export function createConvLogs({
     section.hidden = !section.hidden;
     button.classList.toggle('is-on', !section.hidden);
     if (!section.hidden) {
+      focusPanel(section);
       render();
       refreshSaved();
     }

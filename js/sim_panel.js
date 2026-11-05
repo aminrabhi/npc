@@ -1,11 +1,13 @@
-// Simulation controls, added to the existing editor panel as ONE extra button.
+// Simulation console.
 //
-// The editor panel is the project's existing debug surface, so this adds a single
-// "Sim" button to its toolbar and a section behind it. The section holds the clock
-// override and the weather override, which are deliberately independent: switching
-// one off leaves the other alone.
+// This used to be an extra button inside the tile editor's panel, which made it
+// unreachable with the editor closed. It now lives in the debug dock (js/dock.js),
+// beside the conversation logs and independent of both editors. The section holds the
+// clock override and the weather override, which are deliberately independent:
+// switching one off leaves the other alone.
 
 import { CONDITIONS } from './weather.js';
+import { ensureDock, focusPanel } from './dock.js';
 
 const PRESETS = [
   { label: 'Morning', hours: 8, minutes: 0 },
@@ -18,20 +20,19 @@ const PRESETS = [
 const pad = (n) => String(n).padStart(2, '0');
 
 export function createSimPanel({ clock, weather, lifestyle, getNpcs }) {
-  const editor = document.getElementById('editor');
-  if (!editor) return null;
-
-  const tools = editor.querySelector('.ed-tools');
+  const dock = ensureDock();
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'ed-btn';
   button.id = 'ed-sim';
-  button.textContent = 'Sim';
-  button.title = 'Time, weather and villager states';
-  if (tools) tools.appendChild(button);
+  button.dataset.panel = 'sim-controls';
+  button.textContent = 'Console';
+  button.title = 'Simulation console: time, weather and villager states';
+  dock.buttons.appendChild(button);
 
   const section = document.createElement('div');
   section.id = 'sim-controls';
+  section.className = 'dock-panel';
   section.hidden = true;
   section.innerHTML = `
     <div class="sim-group">
@@ -68,7 +69,7 @@ export function createSimPanel({ clock, weather, lifestyle, getNpcs }) {
       <div class="sim-villagers" id="sim-villagers"></div>
     </div>
   `;
-  editor.appendChild(section);
+  dock.panels.appendChild(section);
 
   const timeOn = section.querySelector('#sim-time-on');
   const hourInput = section.querySelector('#sim-hour');
@@ -181,6 +182,7 @@ export function createSimPanel({ clock, weather, lifestyle, getNpcs }) {
     section.hidden = !section.hidden;
     button.classList.toggle('is-on', !section.hidden);
     if (!section.hidden) {
+      focusPanel(section);
       syncTime();
       syncWeather();
       renderVillagers();

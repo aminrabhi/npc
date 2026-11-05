@@ -45,7 +45,7 @@ def main():
         page.add_style_tag(content="""
             #editor, #editor *, .cl-note, .cl-sub { font-family: 'Pixelify Sans', monospace !important; }
             #editor .cl-row-meta, #editor .cl-sub { font-size: 10px !important; }
-            #editor .cl-row, #editor .cl-text { font-size: 12px !important; }
+            #conv-logs .cl-row, #conv-logs .cl-text { font-size: 12px !important; }
         """)
         page.wait_for_timeout(400)
         page.screenshot(path='artifacts/part2_logs_panel.png')

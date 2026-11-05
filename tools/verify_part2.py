@@ -185,6 +185,18 @@ def main():
         check('recent conversations are listed', panel['recent'] >= 3, panel['recent'])
         check('save is disabled until a conversation is selected', panel['saveDisabled'])
 
+        # the dock is independent of both editors: closing the tile editor must not
+        # take the console and the logs with it
+        check('logs button is outside the tile editor and NPC studio',
+              page.evaluate("!document.getElementById('ed-logs').closest('#editor') && !document.getElementById('ed-logs').closest('#studio')"))
+        check('console button sits in the dock',
+              page.evaluate("!!document.getElementById('ed-sim').closest('#debug-dock')"))
+        page.evaluate("document.getElementById('editor').hidden = true")
+        page.wait_for_timeout(150)
+        check('logs stay usable with the tile editor closed',
+              page.evaluate("!document.getElementById('conv-logs').hidden && !!document.getElementById('ed-logs').offsetParent"))
+        page.evaluate("document.getElementById('editor').hidden = false")
+
         # pick a finished conversation, not one that was interrupted mid-approach
         page.click('#cl-recent .cl-row.complete')
         page.wait_for_timeout(400)
