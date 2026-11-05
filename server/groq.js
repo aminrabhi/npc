@@ -42,44 +42,94 @@ const BANNED = [
 ];
 
 // A speech bubble holds two lines of about 52 characters (four rows at the bubble's
-// width). Anything longer is re-flowed onto a second line or trimmed, so no line ever
-// runs off the screen.
-const MAX_LINE_CHARS = 52;
-const MAX_LINES = 2;
+// width). The model is asked to reword a thought until it fits that budget. When it
+// still runs over, the rest is spoken as a follow-up message instead of being trimmed
+// mid-sentence, so nothing a villager says is cut off.
+export const LINE_BUDGET = {
+  lineChars: 52,
+  lines: 2,
+  chars: 110,
+  messages: 3,
+};
 
-function trimTo(text, limit) {
-  if (text.length <= limit) return text;
-  const cut = text.slice(0, limit);
-  const space = cut.lastIndexOf(' ');
-  return `${(space > limit * 0.6 ? cut.slice(0, space) : cut).trim()}…`;
-}
+const MAX_LINE_CHARS = LINE_BUDGET.lineChars;
+const MAX_LINES = LINE_BUDGET.lines;
 
-// Sentence-aware re-flow: keeps whole sentences where it can, splits on words when a
-// single sentence is too long, and stops after MAX_LINES.
-function packLines(paragraphs, maxLineChars, maxLines) {
+// Word wrap a single sentence so no row is wider than a bubble row.
+function wrapSentence(sentence, maxChars = MAX_LINE_CHARS) {
   const lines = [];
-  for (const paragraph of paragraphs) {
-    const sentences = paragraph.match(/[^.!?…]+[.!?…]+"?'?\)?\]?|[^.!?…]+$/g) || [paragraph];
-    for (const sentence of sentences) {
-      let rest = sentence.trim();
-      while (rest) {
-        if (lines.length >= maxLines) return { lines, truncated: true };
-        if (rest.length <= maxLineChars) {
-          lines.push(rest);
-          break;
-        }
-        let cut = rest.lastIndexOf(' ', maxLineChars);
-        if (cut < 20) cut = maxLineChars;
-        lines.push(rest.slice(0, cut).trim());
-        rest = rest.slice(cut).trim();
+  let current = '';
+  for (const word of String(sentence).split(/\s+/).filter(Boolean)) {
+    if (word.length > maxChars) {
+      if (current) lines.push(current);
+      let rest = word;
+      while (rest.length > maxChars) {
+        lines.push(rest.slice(0, maxChars));
+        rest = rest.slice(maxChars);
       }
+      current = rest;
+      continue;
+    }
+    const candidate = current ? `${current} ${word}` : word;
+    if (current && candidate.length > maxChars) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = candidate;
     }
   }
-  return { lines, truncated: false };
+  if (current) lines.push(current);
+  return lines;
 }
 
-export function sanitiseLine(raw, maxChars = 110) {
-  if (typeof raw !== 'string') return '';
+// Sentence-aware packing: whole sentences where they fit, an extra message rather
+// than a trailing ellipsis where they do not.
+function packMessages(sentences, { maxChars, maxLines, maxMessages }) {
+  const messages = [];
+  let lines = [];
+  let used = 0;
+  const flush = () => {
+    if (!lines.length) return;
+    messages.push(lines.join('\n'));
+    lines = [];
+    used = 0;
+  };
+
+  for (const sentence of sentences) {
+    const wrapped = wrapSentence(sentence, MAX_LINE_CHARS);
+    const joinedLength = used + (lines.length ? 1 : 0) + wrapped.join('\n').length;
+    if (lines.length && (lines.length + wrapped.length > maxLines || joinedLength > maxChars)) {
+      flush();
+    }
+    for (const line of wrapped) {
+      if (lines.length >= maxLines || (lines.length && used + 1 + line.length > maxChars)) flush();
+      lines.push(line);
+      used = lines.join('\n').length;
+    }
+  }
+  flush();
+
+  // Last resort only: a reply this long is far beyond what the model was asked for.
+  // Even then the extra messages are dropped whole, never squeezed into one wide line.
+  const truncated = messages.length > maxMessages;
+  return { messages: truncated ? messages.slice(0, maxMessages) : messages, truncated };
+}
+
+function finishPiece(text, last) {
+  const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
+  if (!lines.length) return '';
+  let joined = lines.join('\n');
+  // a villager's line is dialogue, never a paragraph; a split leaves the first part
+  // trailing off, the last part finishes cleanly
+  if (!/[.!?…]["'”’)]?$/.test(joined)) joined = `${joined}${last ? '.' : '…'}`;
+  if (BANNED.some((re) => re.test(joined))) return '';
+  return joined;
+}
+
+// The spoken line as one or more messages. The first is what the next request answers;
+// the rest are follow-ups the browser speaks as separate messages.
+export function sanitiseMessages(raw, { maxChars = LINE_BUDGET.chars, maxMessages = LINE_BUDGET.messages } = {}) {
+  if (typeof raw !== 'string') return [];
   let text = raw.replace(/\r/g, '');
 
   // fenced code / stray markup
@@ -93,39 +143,32 @@ export function sanitiseLine(raw, maxChars = 110) {
   text = text.replace(/^\s*["'“”‘’]+/, '').replace(/["'“”‘’]+\s*$/, '');
 
   // The model is told to break a second thought onto a new line, so line breaks are
-  // kept (two at most) instead of being flattened into one long speech bubble.
+  // respected instead of being flattened into one long speech bubble.
   const paragraphs = text
     .split(/\n+/)
     .map((line) => line.replace(/[ \t]+/g, ' ').trim())
-    .filter(Boolean)
-    .slice(0, MAX_LINES);
-  if (!paragraphs.length) return '';
-
-  const packed = packLines(paragraphs, MAX_LINE_CHARS, MAX_LINES);
-  let lines = packed.lines.filter(Boolean);
-  if (!lines.length) return '';
-  if (packed.truncated || lines.length > MAX_LINES) {
-    lines = lines.slice(0, MAX_LINES);
-    if (!/…$/.test(lines[lines.length - 1])) lines[lines.length - 1] = `${lines[lines.length - 1]}…`;
-  }
-
-  // Hard ceiling on the whole line, so a runaway generation cannot fill the screen.
-  let budget = maxChars;
-  lines = lines
-    .map((line) => {
-      const keep = Math.max(0, Math.min(line.length, budget));
-      budget -= keep + 1;
-      return keep === line.length ? line : trimTo(line, keep);
-    })
     .filter(Boolean);
-  if (!lines.length) return '';
+  if (!paragraphs.length) return [];
 
-  const joined = lines.join('\n');
-  if (BANNED.some((re) => re.test(joined))) return '';
+  const sentences = [];
+  for (const paragraph of paragraphs) {
+    const parts = paragraph.match(/[^.!?…]+[.!?…]+["'”’)]*|[^.!?…]+$/g) || [paragraph];
+    for (const part of parts) {
+      const sentence = part.replace(/[ \t]+/g, ' ').trim();
+      if (sentence) sentences.push(sentence);
+    }
+  }
+  if (!sentences.length) return [];
 
-  // a villager's line is dialogue, never a paragraph
-  if (!/[.!?…]["'”’)]?$/.test(joined)) return `${joined}.`;
-  return joined;
+  const packed = packMessages(sentences, { maxChars, maxLines: MAX_LINES, maxMessages });
+  return packed.messages
+    .map((piece, index) => finishPiece(piece, !packed.truncated && index === packed.messages.length - 1))
+    .filter(Boolean);
+}
+
+// One message only: kept for the shaping tests and any caller that wants a single line.
+export function sanitiseLine(raw, maxChars = LINE_BUDGET.chars) {
+  return sanitiseMessages(raw, { maxChars, maxMessages: 1 })[0] || '';
 }
 
 export async function chatCompletion({
@@ -244,8 +287,8 @@ export async function chatCompletion({
 
   const choice = payload && Array.isArray(payload.choices) ? payload.choices[0] : null;
   const content = choice && choice.message ? choice.message.content : '';
-  const line = sanitiseLine(content);
-  if (!line) {
+  const parts = sanitiseMessages(content);
+  if (!parts.length) {
     throw new GroqError('Groq returned an empty or unusable reply.', {
       status: 502,
       code: 'groq_empty_reply',
@@ -255,7 +298,8 @@ export async function chatCompletion({
   }
 
   return {
-    text: line,
+    text: parts[0],
+    extra: parts.slice(1),
     model: (payload && payload.model) || cfg.groqModel,
     usage: payload && payload.usage ? payload.usage : null,
     finishReason: choice ? choice.finish_reason || null : null,

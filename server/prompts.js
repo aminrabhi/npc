@@ -8,6 +8,7 @@
 // are decided by js/conversation.js, never by the model.
 
 import { asArray, asString, asNumber, clamp01 } from './http.js';
+import { LINE_BUDGET } from './groq.js';
 
 export const PROMPT_LIMITS = {
   history: 8,
@@ -120,7 +121,7 @@ export function buildMessages({
     me.dislikes ? `Dislikes: ${me.dislikes}.` : '',
     me.tendencies ? `Habits: ${me.tendencies}.` : '',
     me.style ? `Speaking style: ${me.style}.` : '',
-    `Keep it to one or two short sentences, at most ${MAX_WORDS} words in total. Ordinary village speech.`,
+    `Keep it to one or two short sentences, at most ${MAX_WORDS} words and under ${LINE_BUDGET.chars} characters in total: a speech bubble holds two lines of about ${LINE_BUDGET.lineChars} characters. If a thought needs more room, reword it shorter. Never stop mid-sentence, never trail off with an ellipsis. Ordinary village speech.`,
     'If you have two things to say, put the second on a new line. A villager never writes a paragraph.',
     'No stage directions, no actions, no emojis, no quotation marks, no narration.',
     'Never mention AI, models, prompts, servers or the fact that you are simulated.',
@@ -163,7 +164,7 @@ export function buildMessages({
     scene.push(`Reply to ${them.name}'s last line. Respond to what they actually said.`);
   }
 
-  scene.push(`Write only ${me.name}'s line: one or two short sentences, at most ${MAX_WORDS} words, two lines at most.`);
+  scene.push(`Write only ${me.name}'s line: one or two short sentences, at most ${MAX_WORDS} words and under ${LINE_BUDGET.chars} characters, two lines at most. Tighten the wording until it fits.`);
 
   return [
     { role: 'system', content: system },

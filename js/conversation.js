@@ -140,6 +140,7 @@ export function createConversations({
       news: headline ? [headline] : [],
       outcome: null,
       closeReason: null,
+      followUps: [],
     };
 
     sessions.set(session.id, session);
@@ -147,7 +148,11 @@ export function createConversations({
     return session;
   }
 
-  function addMessage(session, speakerId, text, generatedBy, closing) {
+  // One turn is one request to the model. A line that had to be split into a follow-up
+  // message stays part of the same turn, so the villagers keep alternating speakers.
+  const turns = (session) => session.messages.filter((message) => !message.extra).length;
+
+  function addMessage(session, speakerId, text, generatedBy, closing, extra = false) {
     const message = {
       id: `${session.id}_${session.messages.length + 1}`,
       speakerId,
@@ -157,6 +162,7 @@ export function createConversations({
       number: session.messages.length + 1,
       generatedBy,
       closing: !!closing,
+      extra: !!extra,
     };
     session.messages.push(message);
     // the simulation clock is in seconds, so the reading time has to be converted
@@ -189,7 +195,7 @@ export function createConversations({
     return {
       conversationId: session.id,
       mode,
-      messageCount: session.messages.length,
+      messageCount: turns(session),
       speaker: speakerCtx,
       listener: contextFor(listenerEntry),
       history: session.messages.map((message) => ({
@@ -211,11 +217,12 @@ export function createConversations({
 
   async function requestLine(session) {
     if (session.pending || session.status !== 'active') return;
-    const isA = session.messages.length % 2 === 0;
+    const turn = turns(session);
+    const isA = turn % 2 === 0;
     const speakerId = isA ? session.participants[0].id : session.participants[1].id;
-    const mode = session.messages.length === 0
+    const mode = turn === 0
       ? 'opening'
-      : session.messages.length >= session.target - 1 ? 'closing' : 'reply';
+      : turn >= session.target - 1 ? 'closing' : 'reply';
 
     const payload = payloadFor(session, mode, speakerId);
     if (!payload) {
@@ -244,7 +251,15 @@ export function createConversations({
 
     if (result.ok) {
       session.failures = 0;
-      addMessage(session, speakerId, result.text, 'groq', mode === 'closing');
+      // The model is asked to fit one bubble. When it still runs over, the rest is
+      // spoken as another message after this one instead of being cut off.
+      const parts = [result.text, ...(Array.isArray(result.extra) ? result.extra : [])].filter(Boolean);
+      session.followUps = parts.slice(1).map((text, index) => ({
+        speakerId,
+        text,
+        closing: mode === 'closing' && index === parts.length - 2,
+      }));
+      addMessage(session, speakerId, parts[0], 'groq', mode === 'closing' && !session.followUps.length);
       if (mode === 'opening') {
         const list = recentOpeners.get(speakerId) || [];
         list.push(result.text);
@@ -298,7 +313,7 @@ export function createConversations({
 
     // What the conversation left behind. A chat that never got past one line, or one
     // that failed outright, does not move a relationship.
-    const realExchange = session.messages.length >= 2 && (outcome === 'complete' || outcome === 'abandoned');
+    const realExchange = turns(session) >= 2 && (outcome === 'complete' || outcome === 'abandoned');
     if (realExchange) {
       const profileA = profileFor(entryFor(session.npcA) || {});
       const profileB = profileFor(entryFor(session.npcB) || {});
@@ -396,13 +411,19 @@ export function createConversations({
         continue;
       }
 
-      if (session.messages.length === 0) {
+      if (turns(session) === 0) {
         requestLine(session);
         continue;
       }
 
       if (session.clock >= session.nextAt) {
-        if (session.messages.length >= session.target) {
+        // a follow-up waits for the previous bubble to finish, so they never overlap
+        if (session.followUps && session.followUps.length) {
+          const next = session.followUps.shift();
+          addMessage(session, next.speakerId, next.text, 'groq', next.closing, true);
+          continue;
+        }
+        if (turns(session) >= session.target) {
           finish(session, 'complete', 'natural');
         } else {
           requestLine(session);
@@ -431,6 +452,7 @@ export function createConversations({
       errors: session.errors,
       closeReason: session.closeReason,
       pending: session.pending,
+      followUps: (session.followUps || []).length,
       // how long this chat has been running on the simulation clock, so the panel can
       // show progress and a stalled conversation is visible rather than silent
       clock: Number(session.clock.toFixed(1)),

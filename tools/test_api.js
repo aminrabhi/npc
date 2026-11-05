@@ -9,7 +9,7 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { sanitiseLine } from '../server/groq.js';
+import { sanitiseLine, sanitiseMessages } from '../server/groq.js';
 import { buildMessages } from '../server/prompts.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -114,6 +114,10 @@ try {
   const runaway = sanitiseLine('word '.repeat(200));
   check('a runaway reply is capped', runaway.replace(/\n/g, ' ').length <= 110, `${runaway.length}`);
   check('a third line is dropped', sanitiseLine('One thing.\nTwo things.\nThree things.').split('\n').length === 2);
+  const split = sanitiseMessages('The weather has been strange lately and the tomatoes are late this year. I was thinking we should plant them earlier before the frost comes in and cover the beds at night so nothing freezes.');
+  check('a long reply becomes a second message, not a cut-off', split.length >= 2, `${split.length}`);
+  check('each split message still fits a bubble', split.every((part) => part.length <= 110), JSON.stringify(split));
+  check('a split keeps the finished sentence at the end', /[.!?]$/.test(split[split.length - 1]), JSON.stringify(split[split.length - 1]));
 
   const prompt = buildMessages({ speaker: { name: 'Mama Green' }, listener: { name: 'Timmy' }, mode: 'opening' });
   check('prompt asks for one or two short sentences', /one or two short sentences/i.test(prompt[0].content));

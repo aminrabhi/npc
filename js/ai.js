@@ -122,6 +122,9 @@ export function createAiClient({
       return {
         ok: true,
         text: body.message.text,
+        extra: Array.isArray(body.message.extra)
+          ? body.message.extra.filter((part) => typeof part === 'string' && part.trim()).slice(0, 2)
+          : [],
         model: body.message.model,
         messageNumber: body.message.messageNumber,
         usage: body.usage,

@@ -133,6 +133,9 @@ export default route(async (req, res) => {
       ok: true,
       message: {
         text: result.text,
+        // Anything the model wrote past one bubble arrives as a follow-up message
+        // instead of being trimmed mid-sentence.
+        extra: result.extra || [],
         model: result.model,
         mode: body.mode,
         conversationId: body.conversationId,
