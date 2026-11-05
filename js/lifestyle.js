@@ -338,6 +338,8 @@ export function createLifestyle({
     sim.timer = rand(DURATION.watching[0], DURATION.watching[1]);
     sim.dialogue = null;
     sim.partner = null;
+    // when this villager next glances the other way while watching the sky
+    sim.glance = 2 + rng() * 4;
     if (npc.room) {
       leaveHouse(npc);
       return;
@@ -596,7 +598,14 @@ export function createLifestyle({
       }
       if (!npc.path.length) {
         npc.moving = false;
-        npc.facing = rng() < 0.5 ? 1 : -1;
+        // Looking about is a glance every few seconds. This used to re-roll the facing
+        // on every frame, which made a watcher twitch left and right continuously.
+        if (sim.glance === undefined) sim.glance = 2 + rng() * 4;
+        sim.glance -= dt;
+        if (sim.glance <= 0) {
+          if (rng() < 0.5) npc.facing = -npc.facing;
+          sim.glance = 4 + rng() * 5;
+        }
       }
       return;
     }
