@@ -9,6 +9,23 @@ headline.
 
 The art is the supplied asset pack only. Nothing here draws artwork.
 
+## Deploy it yourself
+
+`index.html` is at the repository root, so there is nothing to build:
+
+1. In Vercel: **Add New → Project → Import** this repository.
+2. Framework Preset **Other**, Build Command empty, Output Directory empty, Root
+   Directory `.`.
+3. **Settings → Environment Variables**: add `GROQ_API_KEY`, `SUPABASE_URL` and
+   `SUPABASE_SERVICE_ROLE_KEY` (and optionally `GROQ_MODEL`, `SUPABASE_ANON_KEY`) for
+   Production and Preview, then **Deploy**.
+4. Run `npm run check:live -- https://your-app.vercel.app` to confirm the keys reached
+   the functions and the schema is applied.
+
+Secrets belong in the Vercel dashboard, never in a committed file. For local work,
+`cp .env.example .env` and fill that copy in: `.env` is git-ignored, and `.env.example`
+holds only placeholders.
+
 ## What runs where
 
 | Layer | Files | Notes |

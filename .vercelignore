@@ -1,0 +1,13 @@
+# Keep the deployment payload to the site, the API and their assets.
+# These files stay in git; they just do not need to be uploaded to Vercel.
+
+tools/
+artifacts/
+assets_pack/
+.venv-shot/
+.browser_libs/
+apt/
+
+# Original uploads: reference images and the source asset pack.
+IMG_*.png
+*.zip
