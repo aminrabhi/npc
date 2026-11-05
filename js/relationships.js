@@ -134,6 +134,9 @@ export function createRelationships({
       lastInteraction: null,
       notes: '',
       updatedAt: null,
+      // true only once the server has accepted this record, so a restored local copy
+      // knows whether it still owes Supabase a write
+      synced: false,
     };
   }
 
@@ -150,6 +153,7 @@ export function createRelationships({
   function touch(record) {
     record.updatedAt = new Date().toISOString();
     record.category = deriveCategory(record);
+    record.synced = false;
     dirty.add(keyOf(record.npcId, record.otherId));
     persistLocal();
     queue.schedule();
@@ -167,7 +171,7 @@ export function createRelationships({
           friendliness: record.friendliness, affection: record.affection,
           dislike: record.dislike, category: record.category,
           interactions: record.interactions, lastInteraction: record.lastInteraction,
-          notes: record.notes, updatedAt: record.updatedAt,
+          notes: record.notes, updatedAt: record.updatedAt, synced: record.synced === true,
         };
       }
       storage.setItem(STORAGE_KEY, JSON.stringify({ v: 2, rows }));
@@ -209,7 +213,14 @@ export function createRelationships({
       return { ok: true, saved: 0, blocked: true };
     }
     state.persistBlocked = null;
-    const updates = [...dirty].slice(0, 40).map((key) => {
+    const batch = [...dirty].slice(0, 40);
+    // what each record looked like when it left, so a change that lands mid-request
+    // is still queued afterwards
+    const sentAt = new Map(batch.map((key) => {
+      const record = records.get(key);
+      return [key, record ? record.updatedAt : null];
+    }));
+    const updates = batch.map((key) => {
       const record = records.get(key);
       return {
         npcId: record.npcId,
@@ -245,14 +256,14 @@ export function createRelationships({
         error: (body && body.error && body.error.message) || `save ${res.status}`,
       };
     }
-    for (const key of dirty) {
+    for (const [key, was] of sentAt) {
       const record = records.get(key);
+      if (!record) continue;
+      record.synced = true;
       // a record changed while the request was in flight stays dirty
-      if (record && record.updatedAt === updates.find((u) => u.npcId === record.npcId && u.otherId === record.otherId)?.lastInteraction) {
-        dirty.delete(key);
-      }
+      if (record.updatedAt === was) dirty.delete(key);
     }
-    dirty.clear();
+    persistLocal();
     return { ok: true, saved: updates.length };
   }
 
@@ -290,6 +301,7 @@ export function createRelationships({
           lastInteraction: row.lastInteraction || null,
           notes: row.notes || '',
           updatedAt: row.updatedAt || null,
+          synced: true,
         });
       }
       state.loadedFromServer = true;
@@ -405,6 +417,10 @@ export function createRelationships({
 
   loadLocal();
   if (!records.size) seededRelationships();
+  // Anything the server has not confirmed is offered again on this visit. Without
+  // this, a browser that was opened before the schema existed kept its local records
+  // forever and the table stayed empty until a conversation happened to touch them.
+  for (const [key, record] of records) if (!record.synced) dirty.add(key);
 
   return {
     load,
