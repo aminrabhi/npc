@@ -342,6 +342,8 @@ async function init() {
   // Hooks used by the screenshot tooling.
   window.__worldImage = () => state.worldCanvas.toDataURL('image/png');
   window.__view = () => ({ scale: state.scale, offset: { ...state.offset } });
+  window.__bubbles = () => state.hud.bubbles();
+
   window.__debug = () => state.npcs.map((npc) => {
     const tile = npc.tile;
     return {

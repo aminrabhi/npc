@@ -128,6 +128,7 @@ export function createHud({ village, clock, weather, homes }) {
   // time. The bubble is laid out from the whole line up front so it never jumps in
   // size while the text is still typing out.
   const bubbles = new WeakMap();
+  const placed = [];
   const BUBBLE_FONT = '8px "Pixelify Sans", ui-monospace, monospace';
   const BUBBLE_MAX_WIDTH = 116;
   const BUBBLE_MAX_ROWS = 4;
@@ -170,10 +171,25 @@ export function createHud({ village, clock, weather, homes }) {
     return Math.min(text.length, Math.max(1, Math.ceil((now - state.startedAt) * rate)));
   }
 
+  function overlaps(a, b) {
+    return a.x < b.x + b.w + 2 && a.x + a.w + 2 > b.x && a.y < b.y + b.h + 2 && a.y + a.h + 2 > b.y;
+  }
+
+  // Bubbles are placed clear of each other. Each one starts above its speaker's head
+  // and slides up in 4px steps until it clears the bubbles already placed, so two
+  // villagers talking side by side never stack their words on top of each other.
   function drawBubbles(ctx, npcs, now) {
+    const speakers = [];
     for (const npc of npcs) {
       const line = npc.sim && npc.sim.dialogue;
-      if (!line) continue;
+      if (line) speakers.push({ npc, text: String(line) });
+    }
+    // Villagers higher up the screen claim their space first, so the arrangement is
+    // stable from frame to frame instead of reshuffling.
+    speakers.sort((a, b) => a.npc.y - b.npc.y);
+    placed.length = 0;
+
+    for (const { npc, text } of speakers) {
       const isSleeping = npc.sim.state === 'sleeping';
       const px = Math.round(npc.x);
       const py = Math.round(npc.y) - (isSleeping ? 26 : 24);
@@ -183,7 +199,6 @@ export function createHud({ village, clock, weather, homes }) {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
 
-      const text = String(line);
       const lines = wrapBubble(ctx, text, BUBBLE_MAX_WIDTH);
       if (!lines.length) {
         ctx.restore();
@@ -192,28 +207,56 @@ export function createHud({ village, clock, weather, homes }) {
       const shown = revealCount(npc, text, now);
       const width = Math.max(...lines.map((row) => ctx.measureText(row).width)) + 8;
       const height = lines.length * BUBBLE_LINE_HEIGHT + 3;
-      const x = px - width / 2;
-      const y = py - height;
+
+      // Sit above the speaker's head, then keep climbing until the bubble clears every
+      // bubble already placed. Climbing is unconditional, so two villagers talking side
+      // by side can never end up with their words printed on top of each other. Nothing
+      // is allowed to hang off the edge of the map either.
+      const maxX = Math.max(2, village.width - width - 2);
+      const x = Math.min(maxX, Math.max(2, px - width / 2));
+      let y = Math.max(2, py - height);
+      let guard = 0;
+      while (guard < 240 && y > 2 && placed.some((other) => overlaps({ x, y, w: width, h: height }, other))) {
+        y -= 2;
+        guard += 1;
+      }
+      placed.push({ x, y, w: width, h: height, id: npc.config ? npc.config.id : null, text });
+
+      const displaced = y + height < py - 1 || x + width / 2 !== px;
       ctx.fillStyle = 'rgba(23, 20, 42, 0.88)';
       ctx.strokeStyle = 'rgba(255, 233, 168, 0.55)';
       ctx.lineWidth = 1;
+
+      // When a bubble has been moved out of the way, a thin stem still ties it to the
+      // villager who said it.
+      if (displaced) {
+        ctx.beginPath();
+        ctx.moveTo(x + width / 2, y + height);
+        ctx.lineTo(px, py);
+        ctx.stroke();
+      }
+
       ctx.beginPath();
       ctx.rect(x, y, width, height);
       ctx.fill();
       ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(px - 2, y + height);
-      ctx.lineTo(px + 2, y + height);
-      ctx.lineTo(px, y + height + 3);
-      ctx.closePath();
-      ctx.fill();
+
+      if (!displaced) {
+        ctx.beginPath();
+        ctx.moveTo(px - 2, y + height);
+        ctx.lineTo(px + 2, y + height);
+        ctx.lineTo(px, y + height + 3);
+        ctx.closePath();
+        ctx.fill();
+      }
+
       ctx.fillStyle = '#fff4cf';
       let budget = shown;
       for (let i = 0; i < lines.length; i++) {
         const row = lines[i];
         const take = Math.max(0, Math.min(row.length, budget));
         if (take > 0) {
-          ctx.fillText(row.slice(0, take), px, y + BUBBLE_PAD_TOP + i * BUBBLE_LINE_HEIGHT + BUBBLE_LINE_HEIGHT / 2 - 0.5);
+          ctx.fillText(row.slice(0, take), x + width / 2, y + BUBBLE_PAD_TOP + i * BUBBLE_LINE_HEIGHT + BUBBLE_LINE_HEIGHT / 2 - 0.5);
         }
         budget -= row.length + 1;
       }
@@ -228,6 +271,9 @@ export function createHud({ village, clock, weather, homes }) {
       drawAtmosphere(ctx);
       drawBubbles(ctx, npcs || [], performance.now());
     },
+    // The rects placed this frame, exposed so the overlap rule can be checked from a
+    // test instead of by eye.
+    bubbles: () => placed.map((rect) => ({ ...rect })),
     stop() {
       clearInterval(readoutTimer);
     },
