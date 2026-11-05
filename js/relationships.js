@@ -421,6 +421,9 @@ export function createRelationships({
       pending: dirty.size,
     }),
     saveNow: () => queue.schedule(),
+    // Awaitable, so the console can ask "did the last save work?" and get the real
+    // answer instead of guessing: __rel.flushNow().then(console.log)
+    flushNow: () => flush(),
   };
 }
 

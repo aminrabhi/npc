@@ -368,6 +368,11 @@ export function createConvLogs({
     if (status) bits.push(`relationships ${status.saves} saved${status.pending ? `, ${status.pending} pending` : ''}`);
     if (memoryStatus) bits.push(`memories ${memoryStatus.saves} saved${memoryStatus.pending ? `, ${memoryStatus.pending} pending` : ''}`);
     if (status && status.persistBlocked) bits.push('persistence off: no Supabase');
+    // a rejected save or load is named here, so "nothing in Supabase" is never a
+    // mystery: the real message from the deployment is on screen
+    if (status && (status.saveError || status.loadError)) {
+      bits.push(`relationships: ${status.saveError || status.loadError}`);
+    }
     if (news) {
       const newsStatus = news.status();
       bits.push(`news ${newsStatus.items} cached`);
