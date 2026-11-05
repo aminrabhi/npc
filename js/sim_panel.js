@@ -117,7 +117,7 @@ export function createSimPanel({ clock, weather, lifestyle, getNpcs }) {
     timeOn.checked = clock.isOverridden();
     timeNote.textContent = clock.isOverridden()
       ? 'Simulation pinned to the debug clock.'
-      : 'Following the device clock.';
+      : `Following the device clock (${clock.label()} ${clock.zoneLabel()}).`;
   }
 
   function syncWeather() {
@@ -153,6 +153,11 @@ export function createSimPanel({ clock, weather, lifestyle, getNpcs }) {
     clock.clearOverride();
     syncTime();
   });
+
+  // Start out reading the device clock, so the fields never show the markup's
+  // placeholder hour on the way in.
+  syncTime();
+  syncWeather();
 
   function applyWeather() {
     const code = Number(weatherCode.value) || 0;

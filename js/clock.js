@@ -72,6 +72,17 @@ export function createClock({ now = () => new Date() } = {}) {
       return read().source;
     },
 
+    // The device's own UTC offset, e.g. "GMT+2". The HUD prints it next to the time
+    // so it is always obvious which clock the village is following.
+    zoneLabel() {
+      const minutes = -now().getTimezoneOffset();
+      const sign = minutes < 0 ? '-' : '+';
+      const abs = Math.abs(minutes);
+      const h = Math.floor(abs / 60);
+      const m = abs % 60;
+      return `GMT${sign}${h}${m ? `:${pad(m)}` : ''}`;
+    },
+
     // "8:05 AM" - the HUD reads this straight out.
     label() {
       const h24 = this.hours();

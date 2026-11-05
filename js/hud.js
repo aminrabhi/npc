@@ -70,7 +70,7 @@ export function createHud({ village, clock, weather, homes }) {
     weatherEl.textContent = state.label;
     tempEl.textContent = state.temperature === null ? '-°' : `${state.temperature}°`;
     const bits = [];
-    bits.push(clock.isOverridden() ? 'debug time' : 'real time');
+    bits.push(clock.isOverridden() ? 'debug time' : `real time · ${clock.zoneLabel()}`);
     bits.push(state.overridden ? 'debug weather' : state.live ? `${weather.location.name}` : 'no weather yet');
     if (state.error) bits.push('weather offline');
     subEl.textContent = bits.join(' · ');
