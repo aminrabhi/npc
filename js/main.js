@@ -21,6 +21,7 @@ import { createAiClient } from './ai.js';
 import { createNewsFeed } from './news.js';
 import { createRelationships } from './relationships.js';
 import { createMemories } from './memories.js';
+import { createLessons } from './lessons.js';
 import { createConversations } from './conversation.js';
 import { createConvLogs } from './conv_logs.js';
 import { createRelPanel } from './rel_panel.js';
@@ -215,11 +216,13 @@ async function init() {
   state.news.start();
   state.relationships = createRelationships({ enabled: persistEnabled });
   state.memories = createMemories({ enabled: persistEnabled });
+  state.lessons = createLessons();
   state.conversations = createConversations({
     roster: state.roster,
     ai: state.ai,
     relationships: state.relationships,
     memories: state.memories,
+    lessons: state.lessons,
     news: state.news,
     rng,
     // the lifestyle machine hands the pair back once the chat is over
@@ -466,6 +469,7 @@ async function init() {
   window.__conv = state.conversations;
   window.__rel = state.relationships;
   window.__mem = state.memories;
+  window.__lessons = state.lessons;
   window.__news = state.news;
   window.__ai = state.ai;
   window.__logs = state.convLogs;

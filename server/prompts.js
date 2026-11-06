@@ -41,6 +41,8 @@ export function normaliseProfile(raw) {
     likes: list(p.likes),
     dislikes: list(p.dislikes),
     tendencies: list(p.tendencies),
+    avoidTopics: list(p.avoidTopics, 6, 70),
+    goodHabits: list(p.goodHabits, 6, 70),
     style: asString(conversation.style, 40),
     memories: asArray(p.memories, 4)
       .map((entry) => asString(entry, 110))
@@ -109,6 +111,7 @@ export function buildMessages({
   relationshipChange = null,
   topic = '',
   mood = 'calm',
+  lessonNote = '',
 }) {
   const me = normaliseProfile(speaker);
   const them = normaliseProfile(listener);
@@ -123,6 +126,8 @@ export function buildMessages({
     me.likes ? `Likes: ${me.likes}.` : '',
     me.dislikes ? `Dislikes: ${me.dislikes}.` : '',
     me.tendencies ? `Habits: ${me.tendencies}.` : '',
+    me.avoidTopics ? `Topics you have been corrected for: ${me.avoidTopics}. Never bring these up again; if they come up, change the subject instead of taking the bait.` : '',
+    me.goodHabits ? `Good habits you have been praised for: ${me.goodHabits}. Return to them when they fit naturally, without forcing them into every line.` : '',
     me.style ? `Speaking style: ${me.style}.` : '',
     `Keep it to one or two short sentences, at most ${MAX_WORDS} words and under ${LINE_BUDGET.chars} characters in total: a speech bubble holds two lines of about ${LINE_BUDGET.lineChars} characters. If a thought needs more room, reword it shorter. Never stop mid-sentence, never trail off with an ellipsis.`,
     'Talk like a real person in a casual chat: plain everyday words, short sentences, contractions. No fancy or literary vocabulary, no speeches, no clever phrasing.',
@@ -148,6 +153,9 @@ export function buildMessages({
   if (topic && mode !== 'closing') {
     scene.push(`If the talk needs a subject, bring up ${topic}. It is something you noticed or wondered about yourself, not a news bulletin.`);
   }
+
+  const learnedNote = asString(lessonNote, 180);
+  if (learnedNote) scene.push(learnedNote);
 
   if (relationshipChange) {
     const kind = asString(relationshipChange.kind, 20);

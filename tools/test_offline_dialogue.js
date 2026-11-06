@@ -11,6 +11,7 @@
 import { createOfflineDialogue, fitsBubble, bandOf, CATEGORIES } from '../js/offline_dialogue.js';
 import { createDialogueCache } from '../js/dialogue_cache.js';
 import { createAiClient } from '../js/ai.js';
+import { createLessons } from '../js/lessons.js';
 import { createConversations, TOPICS } from '../js/conversation.js';
 
 let checks = 0;
@@ -323,6 +324,54 @@ if (session) {
 
 console.log('\ntopic pool');
 check('conversation topics avoid village and city life', TOPICS.every((topic) => !/\b(village|city|town)\b/i.test(topic)), TOPICS.filter((topic) => /\b(village|city|town)\b/i.test(topic)).join(' | '));
+
+console.log('\nlearned topics');
+const lessonStore = new Map();
+const lessonStorage = {
+  getItem: (key) => (lessonStore.has(key) ? lessonStore.get(key) : null),
+  setItem: (key, value) => { lessonStore.set(key, value); },
+  removeItem: (key) => { lessonStore.delete(key); },
+};
+const lessons = createLessons({ storage: lessonStorage, now: () => 1_700_000_000_000 });
+lessons.record('npc_a', 'avoid', 'a bet you lost');
+check('a punishment is stored against the villager', lessons.isAvoided('npc_a', 'a bet you lost'));
+const reloadedLessons = createLessons({ storage: lessonStorage });
+check('learned topics survive a reload', reloadedLessons.isAvoided('npc_a', 'a bet you lost'));
+reloadedLessons.record('npc_a', 'good', 'a bet you lost');
+check('a reward replaces an old punishment for the same subject', !reloadedLessons.isAvoided('npc_a', 'a bet you lost') && reloadedLessons.isGood('npc_a', 'a bet you lost'));
+
+const learningConversations = createConversations({
+  roster,
+  ai: offlineAi,
+  relationships,
+  memories: memoryStore,
+  news: null,
+  lessons: reloadedLessons,
+  rng: rngFrom(31),
+  environment: () => ({ timeOfDay: 'morning', weather: null }),
+});
+const learningSession = learningConversations.begin(npcA, npcB);
+check('a conversation starts with a learnable subject', !!learningSession && !!learningSession.topic, learningSession && learningSession.topic);
+const punishedTopic = learningSession && learningSession.topic;
+const punished = learningConversations.react(npcA, 'punish');
+check('punishing records the current subject', !!punished && reloadedLessons.isAvoided('npc_a', punishedTopic), JSON.stringify(punished));
+check('the punished subject leaves the current chat', learningSession.topic !== punishedTopic, learningSession.topic);
+check('the correction is added to the next prompt', /corrected/i.test(learningSession.lessonNotes.get('npc_a').note || ''), JSON.stringify(learningSession.lessonNotes.get('npc_a')));
+const rewardedTopic = learningSession.topic;
+const rewarded = learningConversations.react(npcB, 'reward');
+check('rewarding records the current subject as good', !!rewarded && reloadedLessons.isGood('npc_b', rewardedTopic), JSON.stringify(rewarded));
+check('a reward leaves the current subject in place', learningSession.topic === rewardedTopic);
+check('the praise is added to the next prompt', /praised/i.test(learningSession.lessonNotes.get('npc_b').note || ''), JSON.stringify(learningSession.lessonNotes.get('npc_b')));
+learningConversations.finish(learningSession, 'abandoned', 'test');
+let pickedPunished = false;
+for (let i = 0; i < 12; i += 1) {
+  learningConversations.resetCooldowns();
+  const next = learningConversations.begin(npcA, npcB);
+  if (!next) break;
+  if (next.topic === punishedTopic) pickedPunished = true;
+  learningConversations.finish(next, 'abandoned', 'test');
+}
+check('a punished subject is not chosen again for that villager', !pickedPunished, punishedTopic);
 
 console.log('\ngroup conversation');
 const npcC = { config: { id: 'npc_c' }, sim: { state: 'talking', dialogue: null, partner: npcA }, x: 8, y: 0, room: null };

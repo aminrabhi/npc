@@ -50,7 +50,7 @@ export function createScriptPanel({ roster = [], social, getNpcs }) {
         <button type="button" class="ed-btn" id="script-empty">Empty hands</button>
       </div>
       <div class="sim-note">Force fight ignores relationships. A real conversation only turns into a fight between villagers who already dislike each other.</div>
-      <div class="sim-note">Left click a villager to punish them, right click to pet them.</div>
+      <div class="sim-note">Left click a villager to punish them, right click to reward them. During a talk, the subject they are discussing is what they learn from.</div>
     </div>
   `;
   dock.panels.appendChild(section);

@@ -147,6 +147,9 @@ export function createConversations({
   // here when the village does not hand its own in.
   offline = null,
   cache = null,
+  // Lessons from the player: subjects a villager has been punished for, and habits
+  // they have been praised for. Absent in tests that only exercise the dialogue.
+  lessons = null,
   // The clock and the weather, read fresh for every line. The simulation owns both;
   // this module only borrows them for what a villager would notice.
   environment = null,
@@ -231,11 +234,32 @@ export function createConversations({
     };
   }
 
+  // A punished subject is removed from the pool for the villager who was corrected.
+  // A praised subject is preferred when it is ready again. Both rules apply to every
+  // participant, so a group chat does not hand someone the subject they just dropped.
+  function topicPreferences(participantIds = []) {
+    const banned = new Set();
+    const praised = new Set();
+    if (lessons) {
+      for (const id of participantIds) {
+        for (const topic of lessons.avoidTopics(id)) banned.add(topic.toLowerCase());
+        for (const topic of lessons.goodHabits(id)) praised.add(topic.toLowerCase());
+      }
+    }
+    return { banned, praised };
+  }
+
   // Never the same subject twice in a row, so a pair that meets often still has
   // something new to bring up.
-  function pickTopic() {
-    const pool = TOPICS.filter((candidate) => !recentTopics.includes(candidate) && dialogue.topicReady(candidate));
-    const topic = pool[Math.floor(rng() * pool.length)] || TOPICS[0];
+  function pickTopic(participantIds = []) {
+    const { banned, praised } = topicPreferences(participantIds);
+    const safe = TOPICS.filter((candidate) => !banned.has(candidate.toLowerCase()));
+    const fresh = safe.filter((candidate) => !recentTopics.includes(candidate));
+    const ready = fresh.filter((candidate) => dialogue.topicReady(candidate));
+    const preferred = ready.filter((candidate) => praised.has(candidate.toLowerCase()));
+    const pool = preferred.length ? preferred : ready.length ? ready : fresh.length ? fresh : safe;
+    const topic = pool[Math.floor(rng() * pool.length)] || '';
+    if (!topic) return '';
     recentTopics.push(topic);
     if (recentTopics.length > 8) recentTopics.shift();
     // The engine keeps its own ninety-minute topic cooldown, which outlives the
@@ -298,7 +322,7 @@ export function createConversations({
     const target = MIN_TURNS + Math.floor(rng() * (MAX_TURNS - MIN_TURNS + 1));
     // Every chat gets its own subject, so two villagers who talk every day do not
     // circle the same ground; some also start already annoyed with each other.
-    const topic = pickTopic();
+    const topic = pickTopic([a.id, b.id]);
     const mood = rng() < tensionChance(a.id, b.id) ? 'tense' : 'calm';
 
     const profileA = profileFor(a);
@@ -345,6 +369,10 @@ export function createConversations({
       followUps: [],
       lastSource: null,
       categories: [],
+      // What this villager has been taught during this particular chat. This is
+      // separate from the persisted lesson book: it makes the current conversation
+      // react immediately to a punishment or a reward.
+      lessonNotes: new Map(),
     };
 
     sessions.set(session.id, session);
@@ -437,6 +465,9 @@ export function createConversations({
         importance: memory.importance,
       }))
       : [];
+    const avoidTopics = lessons ? lessons.avoidTopics(speakerEntry.id) : [];
+    const goodHabits = lessons ? lessons.goodHabits(speakerEntry.id) : [];
+    const lesson = session.lessonNotes ? session.lessonNotes.get(speakerEntry.id) : null;
 
     return {
       conversationId: session.id,
@@ -444,7 +475,8 @@ export function createConversations({
       topic: session.topic || '',
       mood: session.mood || 'calm',
       messageCount: turns(session),
-      speaker: speakerCtx,
+      speaker: { ...speakerCtx, avoidTopics, goodHabits },
+      lessonNote: lesson ? lesson.note : '',
       listener: contextFor(listenerEntry),
       history: session.messages.map((message) => ({
         speakerId: message.speakerId,
@@ -619,6 +651,36 @@ export function createConversations({
       if (list.length > 4) list.shift();
       recentOpeners.set(speakerId, list);
     }
+  }
+
+  // The player has just punished or rewarded the subject of this villager's active
+  // conversation. Record the lesson, and make the current chat feel it immediately:
+  // a punishment swaps the subject, while a reward keeps the subject and adds praise.
+  function react(npc, kind = 'punish') {
+    if (!lessons || !npc || !npc.config) return null;
+    const npcId = npc.config.id;
+    const session = [...sessions.values()].find((candidate) => (
+      candidate.status === 'active' && candidate.participants.some((participant) => participant.id === npcId)
+    ));
+    if (!session || !session.topic) return null;
+
+    const action = kind === 'reward' ? 'good' : 'avoid';
+    const learned = lessons.record(npcId, action, session.topic);
+    if (!learned) return null;
+
+    const note = action === 'avoid'
+      ? `You were just corrected for bringing up ${learned.topic}. Drop that subject and do not return to it.`
+      : `You were just praised for talking about ${learned.topic}. That is a good habit; keep it up when it fits.`;
+    session.lessonNotes.set(npcId, { kind: action, topic: learned.topic, note });
+
+    let replacement = null;
+    if (action === 'avoid') {
+      // The old subject is now banned for this villager, so this cannot pick it again.
+      replacement = pickTopic(session.participants.map((participant) => participant.id));
+      if (replacement) session.topic = replacement;
+    }
+
+    return { kind: action, topic: learned.topic, note, sessionId: session.id, replacement };
   }
 
   function finish(session, outcome, reason = null) {
@@ -836,6 +898,7 @@ export function createConversations({
   return {
     begin,
     join,
+    react,
     canTalk,
     update,
     abandon,

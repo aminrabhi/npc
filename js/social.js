@@ -36,6 +36,14 @@ export const PUNISH_LINES = [
   'Sorry, Master. I will keep out of your way.',
 ];
 
+export const LEARNED_PUNISH_LINES = [
+  'Sorry, Master. I will not bring that up again.',
+  'I understand, Master. That subject is off the table.',
+  'I hear you, Master. I will leave that alone.',
+  'Sorry, Master. I will keep to other things.',
+  'Yes, Master. I have learned my lesson.',
+];
+
 export const PET_LINES = [
   'That is lovely.',
   'Oh, I like that.',
@@ -57,6 +65,14 @@ export const PET_LINES = [
   'I will remember this.',
   'My day just got better.',
   'Come back and do that again.',
+];
+
+export const LEARNED_REWARD_LINES = [
+  'I am glad you liked that. I will keep it up.',
+  'That is good to know. I will remember that.',
+  'You liked that? I will do it more.',
+  'Thank you. I will keep that habit.',
+  'I am pleased I did the right thing.',
 ];
 
 export const FIGHT_LINES = [
@@ -226,7 +242,12 @@ export function createSocial({
 
   function punish(npc) {
     if (!npc) return null;
-    const line = pick(rng, PUNISH_LINES);
+    // A punishment during a talk teaches the subject, not just the animation. Outside
+    // a conversation there is no subject to learn, so the ordinary reaction remains.
+    const learned = conversations && typeof conversations.react === 'function'
+      ? conversations.react(npc, 'punish')
+      : null;
+    const line = pick(rng, learned ? LEARNED_PUNISH_LINES : PUNISH_LINES);
     const sim = simOf(npc);
     if (sim) {
       sim.react = 'punish';
@@ -234,12 +255,15 @@ export function createSocial({
     }
     emote(npc, 'stress', 2400);
     say(npc, line, 4600);
-    return { line };
+    return { line, learned };
   }
 
   function pet(npc) {
     if (!npc) return null;
-    const line = pick(rng, PET_LINES);
+    const learned = conversations && typeof conversations.react === 'function'
+      ? conversations.react(npc, 'reward')
+      : null;
+    const line = pick(rng, learned ? LEARNED_REWARD_LINES : PET_LINES);
     const sim = simOf(npc);
     if (sim) {
       sim.react = 'pet';
@@ -247,7 +271,7 @@ export function createSocial({
     }
     emote(npc, 'love', 2800);
     say(npc, line, 4600);
-    return { line };
+    return { line, learned };
   }
 
   function pose(a, b) {

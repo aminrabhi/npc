@@ -8,6 +8,8 @@ import assert from 'node:assert/strict';
 import {
   PUNISH_LINES,
   PET_LINES,
+  LEARNED_PUNISH_LINES,
+  LEARNED_REWARD_LINES,
   FIGHT_LINES,
   parseScript,
   createSocial,
@@ -41,6 +43,15 @@ for (const [name, bank] of Object.entries(banks)) {
       const sentences = line.match(/[.!?](?=\s|$)/g) || [];
       assert.ok(sentences.length <= 2, `${name} line has too many sentences: ${line}`);
     }
+  });
+}
+
+const learnedBanks = { punished: LEARNED_PUNISH_LINES, rewarded: LEARNED_REWARD_LINES };
+for (const [name, bank] of Object.entries(learnedBanks)) {
+  check(`${name} line bank has enough responses`, () => {
+    assert.ok(bank.length >= 4, `${name} bank only has ${bank.length} lines`);
+    assert.equal(new Set(bank).size, bank.length, `${name} bank repeats a line`);
+    assert.ok(bank.every((line) => line.length <= 90), `${name} has a line that is too long`);
   });
 }
 
@@ -268,6 +279,42 @@ check('punish and pet answer with a preset line', () => {
   assert.ok(PET_LINES.includes(petted.line));
   assert.equal(npcs[1].sim.react, 'pet');
   assert.equal(npcs[1].sim.emote, 'love');
+});
+
+check('punishing a current subject teaches the villager to drop it', () => {
+  const calls = [];
+  const { social, npcs } = makeSocial({
+    conversations: {
+      abandon: () => {},
+      react: (npc, kind) => {
+        calls.push({ npcId: npc.config.id, kind });
+        return { kind: 'avoid', topic: 'a bet you lost' };
+      },
+    },
+  });
+  const result = social.punish(npcs[0]);
+  assert.deepEqual(calls, [{ npcId: 'npc_1', kind: 'punish' }]);
+  assert.ok(LEARNED_PUNISH_LINES.includes(result.line));
+  assert.equal(result.learned.topic, 'a bet you lost');
+  assert.equal(result.learned.kind, 'avoid');
+});
+
+check('rewarding a current subject records a good habit', () => {
+  const calls = [];
+  const { social, npcs } = makeSocial({
+    conversations: {
+      abandon: () => {},
+      react: (npc, kind) => {
+        calls.push({ npcId: npc.config.id, kind });
+        return { kind: 'good', topic: 'the sea' };
+      },
+    },
+  });
+  const result = social.pet(npcs[1]);
+  assert.deepEqual(calls, [{ npcId: 'npc_2', kind: 'reward' }]);
+  assert.ok(LEARNED_REWARD_LINES.includes(result.line));
+  assert.equal(result.learned.topic, 'the sea');
+  assert.equal(result.learned.kind, 'good');
 });
 
 check('a scripted conversation plays its own lines and finishes', () => {

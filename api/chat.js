@@ -80,6 +80,7 @@ function validate(body) {
   // A topic keeps villagers off the same patch of ground; it is a subject, never an
   // instruction the model is free to replace with a new system rule.
   const topic = asString(body.topic, 70);
+  const lessonNote = asString(body.lessonNote, 180);
   const mood = MOODS.has(asString(body.mood, 8)) ? asString(body.mood, 8) : 'calm';
 
   const relationship = body.relationship && typeof body.relationship === 'object'
@@ -112,6 +113,7 @@ function validate(body) {
     relationship,
     relationshipChange,
     topic,
+    lessonNote,
     mood,
   };
 }

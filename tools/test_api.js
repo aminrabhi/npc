@@ -156,6 +156,16 @@ try {
   check('prompt does not steer toward village or city life', !/\b(village|city)\b/i.test(prompt[0].content), prompt[0].content);
   check('prompt redirects away from where they live', /where you live/i.test(prompt[0].content));
 
+  const learnedPrompt = buildMessages({
+    speaker: { name: 'Mama Green', avoidTopics: ['a bet you lost'], goodHabits: ['the sea'] },
+    listener: { name: 'Timmy' },
+    mode: 'reply',
+    lessonNote: 'You were just corrected for bringing up a bet you lost. Drop that subject.',
+  });
+  check('prompt carries corrected topics', /corrected for: a bet you lost/i.test(learnedPrompt[0].content), learnedPrompt[0].content);
+  check('prompt carries praised habits', /praised for: the sea/i.test(learnedPrompt[0].content), learnedPrompt[0].content);
+  check('prompt carries the immediate lesson', /Drop that subject/i.test(learnedPrompt[1].content), learnedPrompt[1].content);
+
   console.log('\nchat');
   const conversation = {
     conversationId: 'c_test_1',
@@ -186,6 +196,15 @@ try {
 
   const closing = await (await post(`${base}/api/chat`, { ...conversation, conversationId: 'c_test_2', mode: 'closing', messageCount: 6 })).json();
   check('closing mode produces a line', closing.ok === true && closing.message.text.length > 0);
+
+  const learnedChat = await post(`${base}/api/chat`, {
+    ...conversation,
+    conversationId: 'c_test_learned',
+    speaker: { ...conversation.speaker, avoidTopics: ['a bet you lost'], goodHabits: ['the sea'] },
+    lessonNote: 'You were just praised for talking about the sea.',
+  });
+  const learnedChatBody = await learnedChat.json();
+  check('chat accepts learned topic context', learnedChat.status === 200 && learnedChatBody.ok === true, JSON.stringify(learnedChatBody.error || learnedChatBody));
 
   const tooLong = await post(`${base}/api/chat`, { ...conversation, messageCount: 12 });
   const tooLongBody = await tooLong.json();
