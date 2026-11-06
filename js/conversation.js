@@ -306,6 +306,9 @@ export function createConversations({
         { id: a.id, name: a.name },
         { id: b.id, name: b.name },
       ],
+      // The live NPC objects, in the same order as participants. A third villager can
+      // be appended here when they join, up to three speakers.
+      npcs: [npcA, npcB],
       initiatorId: a.id,
       responderId: b.id,
       startedAt: new Date().toISOString(),
@@ -345,6 +348,47 @@ export function createConversations({
   // message stays part of the same turn, so the villagers keep alternating speakers.
   const turns = (session) => session.messages.filter((message) => !message.extra).length;
 
+  const npcsOf = (session) => session.npcs || [session.npcA, session.npcB];
+
+  function npcForId(session, id) {
+    return npcsOf(session).find((npc) => npc && npc.config && npc.config.id === id) || null;
+  }
+
+  // The next speaker is the next participant in order, so a pair alternates and a
+  // group goes around the circle. One conversation uses one rule for every size.
+  function speakerAt(session, turn = turns(session)) {
+    return session.participants[turn % session.participants.length] || null;
+  }
+
+  function listenerAfter(session, speakerId) {
+    const at = session.participants.findIndex((participant) => participant.id === speakerId);
+    if (at < 0) return null;
+    return session.participants[(at + 1) % session.participants.length] || null;
+  }
+
+  // A nearby villager joins the chat. Three is the limit: a fourth voice turns a
+  // conversation into a crowd and nobody can follow the transcript.
+  function join(session, npc) {
+    if (!session || session.status !== 'active' || !npc || !npc.config) return false;
+    if (session.participants.length >= 3) return false;
+    const id = npc.config.id;
+    if (session.participants.some((participant) => participant.id === id)) return false;
+    const entry = entryFor(npc);
+    if (!entry) return false;
+    for (const participant of session.participants) {
+      const other = npcForId(session, participant.id);
+      if (!other || !canTalk(npc, other)) return false;
+    }
+    session.participants.push({ id: entry.id, name: entry.name });
+    if (!session.npcs) session.npcs = npcsOf(session);
+    session.npcs.push(npc);
+    session.joined = (session.joined || 0) + 1;
+    // A newcomer needs a turn or two to say anything worth hearing.
+    session.target = Math.min(12, session.target + 2);
+    session.joinedAt = session.clock;
+    return true;
+  }
+
   function addMessage(session, speakerId, text, generatedBy, closing, extra = false) {
     const message = {
       id: `${session.id}_${session.messages.length + 1}`,
@@ -365,15 +409,15 @@ export function createConversations({
     else if (generatedBy === 'cached') stats.cachedMessages += 1;
     else stats.offlineMessages += 1;
 
-    const npc = speakerId === session.participants[0].id ? session.npcA : session.npcB;
+    const npc = npcForId(session, speakerId);
     if (npc && npc.sim) npc.sim.dialogue = text;
     return message;
   }
 
   function payloadFor(session, mode, speakerId) {
-    const isA = speakerId === session.participants[0].id;
-    const speakerEntry = isA ? entryFor(session.npcA) : entryFor(session.npcB);
-    const listenerEntry = isA ? entryFor(session.npcB) : entryFor(session.npcA);
+    const speakerEntry = entryFor(npcForId(session, speakerId));
+    const listener = listenerAfter(session, speakerId);
+    const listenerEntry = listener ? entryFor(npcForId(session, listener.id)) : null;
     if (!speakerEntry || !listenerEntry) return null;
 
     const speakerCtx = contextFor(speakerEntry);
@@ -414,8 +458,8 @@ export function createConversations({
   async function requestLine(session) {
     if (session.pending || session.status !== 'active') return;
     const turn = turns(session);
-    const isA = turn % 2 === 0;
-    const speakerId = isA ? session.participants[0].id : session.participants[1].id;
+    const speakerNow = speakerAt(session, turn);
+    const speakerId = speakerNow ? speakerNow.id : session.participants[0].id;
     const mode = turn === 0
       ? 'opening'
       : turn >= session.target - 1 ? 'closing' : 'reply';
@@ -429,8 +473,9 @@ export function createConversations({
     session.pending = true;
     session.pendingSince = session.clock;
 
-    const speakerEntry = isA ? entryFor(session.npcA) : entryFor(session.npcB);
-    const listenerEntry = isA ? entryFor(session.npcB) : entryFor(session.npcA);
+    const speakerEntry = entryFor(npcForId(session, speakerId));
+    const listener = listenerAfter(session, speakerId);
+    const listenerEntry = listener ? entryFor(npcForId(session, listener.id)) : null;
     const profile = profileFor(speakerEntry || {});
     const otherProfile = profileFor(listenerEntry || {});
     const env = environmentNow();
@@ -515,7 +560,7 @@ export function createConversations({
         timeOfDay: env.timeOfDay,
         news: session.news[0] || null,
         topic: session.topic,
-        activity: activityOf(isA ? session.npcA : session.npcB),
+        activity: activityOf(npcForId(session, speakerId)),
         recentLines: session.messages.map((message) => message.text).slice(-6),
       });
       parts = [spoken.text];
@@ -579,13 +624,18 @@ export function createConversations({
     // Whatever happens next, neither villager keeps a reference to a session that is
     // no longer running - a stale reference is what would leave a pair stuck facing
     // each other with nobody driving the conversation.
-    for (const npc of [session.npcA, session.npcB]) {
+    for (const npc of npcsOf(session)) {
       if (npc && npc.sim && npc.sim.session === session) npc.sim.session = null;
     }
 
-    const aId = session.participants[0].id;
-    const bId = session.participants[1].id;
-    pairCooldowns.set(pairKey(aId, bId), Date.now() + cooldownFor(session) * 1000);
+    // Every pair that shared the chat waits out a cooldown, not just the first two.
+    const cooldown = cooldownFor(session);
+    const people = session.participants;
+    for (let i = 0; i < people.length; i += 1) {
+      for (let j = i + 1; j < people.length; j += 1) {
+        pairCooldowns.set(pairKey(people[i].id, people[j].id), Date.now() + cooldown * 1000);
+      }
+    }
 
     if (outcome === 'complete') stats.completed += 1;
     else if (outcome === 'failed') stats.failed += 1;
@@ -594,31 +644,57 @@ export function createConversations({
     // What the conversation left behind. A chat that never got past one line, or one
     // that failed outright, does not move a relationship.
     const realExchange = turns(session) >= 2 && (outcome === 'complete' || outcome === 'abandoned');
-    if (realExchange) {
-      const profileA = profileFor(entryFor(session.npcA) || {});
-      const profileB = profileFor(entryFor(session.npcB) || {});
-      const disagreement = session.mood === 'tense'
-        || session.messages.some((message) => ANGER.test(message.text));
-      const result = relationships ? relationships.applyConversation(session, {
-        profileA,
-        profileB,
-        disagreement,
-        newsUsed: session.news.length > 0 && session.messages.some((message) => /news|headline|heard/i.test(message.text)),
-      }) : null;
-      session.relationshipChanges = result ? result.changes : [];
-      session.tone = result ? result.tone : 0;
-      if (memories) {
-        session.memories = memories.consider(session, {
-          profileA,
-          profileB,
-          relationshipChanges: session.relationshipChanges,
-          news: session.news[0] || null,
-          disagreement,
-        });
+    if (realExchange && relationships) {
+      // Score each pair separately: the third villager was not part of every line and
+      // should not inherit the relationship change of a conversation they only half heard.
+      const changes = [];
+      const memoriesMade = [];
+      let toneSum = 0;
+      let toneCount = 0;
+      for (let i = 0; i < people.length; i += 1) {
+        for (let j = i + 1; j < people.length; j += 1) {
+          const p1 = people[i];
+          const p2 = people[j];
+          const messages = session.messages.filter((message) => message.speakerId === p1.id || message.speakerId === p2.id);
+          if (messages.length < 2) continue;
+          const pairSession = { ...session, participants: [p1, p2], messages };
+          const profileA = profileFor(entryFor(npcForId(session, p1.id)) || {});
+          const profileB = profileFor(entryFor(npcForId(session, p2.id)) || {});
+          const disagreement = session.mood === 'tense'
+            || messages.some((message) => ANGER.test(message.text));
+          const result = relationships.applyConversation(pairSession, {
+            profileA,
+            profileB,
+            disagreement,
+            newsUsed: session.news.length > 0 && messages.some((message) => /news|headline|heard/i.test(message.text)),
+          });
+          if (result) {
+            changes.push(...(result.changes || []));
+            if (Number.isFinite(Number(result.tone))) {
+              toneSum += Number(result.tone);
+              toneCount += 1;
+            }
+          }
+          if (memories) {
+            const created = memories.consider(pairSession, {
+              profileA,
+              profileB,
+              relationshipChanges: result ? result.changes : [],
+              news: session.news[0] || null,
+              disagreement,
+            }) || [];
+            for (const memory of created) {
+              if (!memoriesMade.some((existing) => existing.id === memory.id)) memoriesMade.push(memory);
+            }
+          }
+        }
       }
+      session.relationshipChanges = changes;
+      session.tone = toneCount ? toneSum / toneCount : 0;
+      session.memories = memoriesMade;
     }
 
-    const dialogueClear = [session.npcA, session.npcB];
+    const dialogueClear = npcsOf(session);
     for (const npc of dialogueClear) {
       if (npc && npc.sim && npc.sim.dialogue && session.clock > 0) {
         // leave the last line visible for a moment, then let the day continue
@@ -635,8 +711,7 @@ export function createConversations({
     // on keeps that state, and a villager still standing in the chat gets a fresh
     // plan. Skipping this is how a pair ends up frozen mid-conversation.
     if (onHandBack) {
-      onHandBack(session.npcA);
-      onHandBack(session.npcB);
+      for (const npc of npcsOf(session)) onHandBack(npc);
     }
     if (onEnd) onEnd(session);
   }
@@ -651,22 +726,26 @@ export function createConversations({
     for (const session of [...sessions.values()]) {
       session.clock += step;
 
-      const a = session.npcA;
-      const b = session.npcB;
-      if (!a || !b || !a.sim || !b.sim) {
+      const group = npcsOf(session);
+      const anchor = group[0];
+      if (group.length < 2 || group.some((npc) => !npc || !npc.sim)) {
         finish(session, 'abandoned', 'missing_villager');
         continue;
       }
-      // someone walked away, went to bed, or the editor froze the village
-      const stillTalking = a.sim.state === 'talking' && b.sim.state === 'talking'
-        && a.sim.partner === b && b.sim.partner === a;
+      // someone walked away, went to bed, or the editor froze the village. A group
+      // member only has to be facing the circle, not paired with one specific person.
+      const ids = new Set(session.participants.map((participant) => participant.id));
+      const stillTalking = group.every((npc) => npc.sim.state === 'talking'
+        && npc.sim.partner && npc.sim.partner.config
+        && ids.has(npc.sim.partner.config.id));
       if (!stillTalking) {
         finish(session, 'abandoned', 'participant_left');
         continue;
       }
 
-      const gap = Math.hypot(b.x - a.x, b.y - a.y);
-      if (gap > 20) {
+      const limit = group.length > 2 ? 34 : 20;
+      const gap = Math.max(...group.map((npc) => Math.hypot(npc.x - anchor.x, npc.y - anchor.y)));
+      if (gap > limit) {
         session.wait += step;
         if (session.wait > APPROACH_LIMIT) finish(session, 'abandoned', 'unreachable');
         continue;
@@ -748,6 +827,7 @@ export function createConversations({
 
   return {
     begin,
+    join,
     canTalk,
     update,
     abandon,

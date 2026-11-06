@@ -609,6 +609,8 @@ export function createSocial({
   // already dislikes each other. Friends can argue and make up without drawing steel.
   function escalate(session) {
     if (!session || session.outcome !== 'complete') return false;
+    // A group row is not a duel; only a two-person argument can turn into a fight.
+    if (session.participants && session.participants.length > 2) return false;
     if (fight || script || stun) return false;
     const argued = session.closeReason === 'argument';
     const boiling = session.mood === 'tense' && rng() < 0.45;

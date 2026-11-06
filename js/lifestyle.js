@@ -52,6 +52,8 @@ export function createLifestyle({
   const T = village.tileSize;
   const rand = (a, b) => a + rng() * (b - a);
   const pick = (list) => list[Math.floor(rng() * list.length)];
+  // How often the village looks for someone to wander into a conversation.
+  let joinCheck = 2.5;
 
   const simOf = (npc) => {
     if (!npc.sim) {
@@ -378,6 +380,45 @@ export function createLifestyle({
     return npc.sim.state === 'walking' || npc.sim.state === 'watching';
   }
 
+  // Someone standing nearby may join a chat that is already running. The newcomer
+  // walks nowhere: they are close enough to turn and take part, and the conversation
+  // extends its target by a couple of turns so they actually get to speak.
+  function attemptJoin() {
+    if (!conversations || !conversations.join) return false;
+    const npcs = getNpcs();
+    const seen = new Set();
+    for (const npc of npcs) {
+      const session = npc.sim && npc.sim.session;
+      if (!session || seen.has(session) || !Array.isArray(session.participants)
+        || session.participants.length >= 3) continue;
+      seen.add(session);
+      if ((session.clock || 0) < 3) continue;
+      if (rng() > 0.24) continue;
+      const members = session.npcs || [];
+      const candidates = npcs.filter((other) => other !== npc
+        && freeForTalk(other)
+        && !other.room
+        && Math.hypot(other.x - npc.x, other.y - npc.y) <= 32
+        && members.every((member) => !member
+          || Math.hypot(other.x - member.x, other.y - member.y) <= 34)
+        && !nearDoorway(other.tile.x, other.tile.y));
+      if (!candidates.length) continue;
+      const candidate = pick(candidates);
+      if (!conversations.join(session, candidate)) continue;
+      const sim = simOf(candidate);
+      stopForTalk(candidate);
+      sim.state = 'talking';
+      sim.partner = npc;
+      sim.timer = 600;
+      sim.dialogue = '…';
+      sim.approachTime = 0;
+      sim.session = session;
+      faceEachOther(candidate, npc);
+      return true;
+    }
+    return false;
+  }
+
   function startTalk(npc, sim) {
     // Any free villager close enough is a candidate, but only one we can actually
     // walk to: a conversation never starts across the river or a fence.
@@ -564,16 +605,23 @@ export function createLifestyle({
       // A chase is fought on the move: do not plant the pair face to face.
       if (sim.fighting) return;
       const partner = sim.partner;
-      // A partner who is no longer talking to *us* has moved on: follow them instead
-      // of standing here facing a villager who is already walking away.
+      // In a three-way chat the pair do not point at the newcomer, so "is this person
+      // still in my conversation?" has to mean "are they in the group?" rather than
+      // "are we each other's one partner?".
+      const members = sim.session && Array.isArray(sim.session.participants)
+        ? sim.session.participants : null;
+      const groupIds = members && members.length > 2
+        ? new Set(members.map((member) => member.id)) : null;
+      const groupMate = !!(groupIds && partner && partner.config && groupIds.has(partner.config.id));
       if (!partner || !partner.sim || partner.sim.state !== 'talking'
-        || partner.sim.partner !== npc || partner.room) {
+        || (partner.sim.partner !== npc && !groupMate) || partner.room) {
         sim.partner = null;
         planNext(npc, sim);
         return;
       }
       const gap = Math.hypot(partner.x - npc.x, partner.y - npc.y);
-      if (gap > TALK_GAP) {
+      const reach = groupIds ? 34 : TALK_GAP;
+      if (gap > reach) {
         sim.approachTime = (sim.approachTime || 0) + dt;
         // when a conversation session exists the manager owns this deadline and
         // abandons the chat (handing both villagers back) on its own
@@ -637,7 +685,14 @@ export function createLifestyle({
     update(dt) {
       // conversations pace themselves on the same simulated clock as the villagers,
       // so a fast-forwarded frame advances a chat the same way a real one would
-      if (conversations) conversations.update(dt);
+      if (conversations) {
+        conversations.update(dt);
+        joinCheck -= dt;
+        if (joinCheck <= 0) {
+          joinCheck = 2.5;
+          attemptJoin();
+        }
+      }
       const npcs = getNpcs();
       for (const npc of npcs) {
         const sim = simOf(npc);
@@ -656,8 +711,10 @@ export function createLifestyle({
         // because the walk took a while, and a chat does not burn its time while the
         // pair is still walking up to each other.
         const visiting = sim.state === 'visiting' && sim.visitRoom && npc.room !== sim.visitRoom;
+        const groupChat = sim.session && sim.session.participants
+          && sim.session.participants.length > 2;
         const apart = sim.state === 'talking' && sim.partner
-          && Math.hypot(sim.partner.x - npc.x, sim.partner.y - npc.y) > TALK_GAP;
+          && Math.hypot(sim.partner.x - npc.x, sim.partner.y - npc.y) > (groupChat ? 34 : TALK_GAP);
         if (!visiting && !apart) sim.timer -= dt;
         if (clock.isNight()) {
           if (sim.state !== 'sleeping' && !sim.fighting) startSleep(npc, sim);

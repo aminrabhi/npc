@@ -59,6 +59,17 @@ const bram = {
   memories: [],
 };
 
+const cora = {
+  id: 'npc_c',
+  name: 'Cora',
+  personality: ['curious', 'wry'],
+  interests: ['fixing things', 'town gossip'],
+  likes: ['tea', 'company'],
+  dislikes: ['rudeness'],
+  style: 'warm',
+  memories: [],
+};
+
 const stranger = { category: 'stranger', score: 0, trust: 0.3, familiarity: 0.05, dislike: 0 };
 const friend = { category: 'friend', score: 45, trust: 0.55, familiarity: 0.5, dislike: 0 };
 const best = { category: 'best friend', score: 92, trust: 0.85, familiarity: 0.8, dislike: 0 };
@@ -242,7 +253,7 @@ try {
 }
 
 console.log('\nvillage with no model at all');
-const roster = [ada, bram].map((profile) => ({
+const roster = [ada, bram, cora].map((profile) => ({
   id: profile.id,
   name: profile.name,
   personality: profile.personality,
@@ -263,9 +274,13 @@ const offlineAi = {
   availability: () => ({ configured: false, available: false, fallback: true, coolingDown: false }),
 };
 
+const pairScores = [];
 const relationships = {
   record: () => ({ category: 'friend', score: 40, trust: 0.5, familiarity: 0.5, dislike: 0 }),
-  applyConversation: () => ({ changes: [], tone: 0 }),
+  applyConversation: (session) => {
+    pairScores.push(session);
+    return { changes: [], tone: 0 };
+  },
 };
 const memoryStore = { recall: () => [], consider: () => [] };
 
@@ -304,6 +319,27 @@ if (session) {
   check('the reported mode is offline', conversations.mode() === 'offline', conversations.mode());
   check('the status reports fallback with counts', conversations.dialogueStatus().fallback === true && conversations.dialogueStatus().counts.offline >= 1, JSON.stringify(conversations.dialogueStatus().counts));
   check('the stats count offline lines', conversations.stats().offlineMessages >= 2, JSON.stringify(conversations.stats()));
+}
+
+console.log('\ngroup conversation');
+const npcC = { config: { id: 'npc_c' }, sim: { state: 'talking', dialogue: null, partner: npcA }, x: 8, y: 0, room: null };
+npcC.sim.partner = npcA;
+conversations.resetCooldowns();
+const group = conversations.begin(npcA, npcB);
+check('a group conversation starts from a pair', !!group);
+if (group) {
+  check('a nearby villager can join', conversations.join(group, npcC) === true, `${group.participants.length} participants`);
+  check('the group has three participants', group.participants.length === 3, group.participants.map((p) => p.name).join(','));
+  check('joining extends the conversation', group.target >= 4, `${group.target}`);
+
+  for (let step = 0; step < 5000 && group.status === 'active'; step++) {
+    conversations.update(0.5);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  check('the newcomer gets a line', group.messages.some((message) => message.speakerId === 'npc_c'), group.messages.map((m) => m.speakerId).join(','));
+  check('the group transcript was scored pair by pair', pairScores.length >= 2
+    && pairScores.every((pair) => pair.participants.length === 2), `${pairScores.length} pairs`);
+  check('the group conversation finishes', group.outcome === 'complete' || group.outcome === 'abandoned', `${group.outcome} ${group.closeReason}`);
 }
 
 console.log(`\n${checks - failures}/${checks} checks passed.`);

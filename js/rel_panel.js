@@ -97,7 +97,7 @@ export function createRelPanel({ relationships, roster = [], conversations = nul
     const active = conversations.active();
     if (!active.length) return '';
     const pairs = active.map((session) => {
-      const pair = `${session.participants[0].name} & ${session.participants[1].name}`;
+      const pair = session.participants.map((participant) => participant.name).join(' & ');
       return session.mood === 'tense' ? `${pair} (tense)` : pair;
     });
     return `talking now: ${pairs.join(', ')}`;

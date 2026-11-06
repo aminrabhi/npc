@@ -135,7 +135,7 @@ export function createConvLogs({
   }
 
   function sessionLabel(session) {
-    return `${session.participants[0].name} & ${session.participants[1].name}`;
+    return session.participants.map((participant) => participant.name).join(' & ');
   }
 
   function rowFor(session, { live }) {
@@ -337,7 +337,7 @@ export function createConvLogs({
       <div class="cl-detail-head">
         <div>
           <div class="cl-detail-title">${sessionLabel(session)}</div>
-          <div class="cl-sub">${session.participants[0].id} & ${session.participants[1].id} · ${session.id}</div>
+          <div class="cl-sub">${session.participants.map((p) => p.id).join(' & ')} · ${session.id}</div>
         </div>
         <span class="cl-badge cl-${session.status}">${statusLabel(session.status)}</span>
         ${savedAt ? '<span class="cl-badge cl-saved">saved</span>' : ''}
