@@ -118,6 +118,7 @@ export function buildMessages({
 
   const system = [
     `You are ${me.name}. Write only ${me.name}'s spoken words.`,
+    'Only write your own words. Never write another person\'s line, rename anyone, or claim to be someone else. The transcript labels every line; use those labels to keep the speakers straight.',
     'Talk about your own life and the wider world: work, food, music, family, memories, plans, the weather, something you noticed or wondered about. Keep it personal and specific, not a description of where you live.',
     me.personality ? `Personality: ${me.personality}.` : '',
     me.backstory ? `Backstory: ${me.backstory}` : '',
@@ -147,7 +148,16 @@ export function buildMessages({
   ].filter(Boolean).join('\n');
 
   const scene = [];
-  scene.push(`You are talking with ${them.name}.`);
+  const present = [...new Set([
+    me.name,
+    them.name,
+    ...asArray(history, 16).map((message) => asString(message && message.speakerName, 24)).filter(Boolean),
+  ])];
+  if (present.length > 2) {
+    scene.push(`The people in this conversation are ${present.join(', ')}. You are ${me.name}; ${them.name} is the person you are answering. Never speak as anyone else or invent another person.`);
+  } else {
+    scene.push(`The only two people here are ${me.name} and ${them.name}. You are ${me.name}; ${them.name} is the person you are talking with. Do not call them by another name, do not claim to be them, and do not invent another person.`);
+  }
   scene.push(relationshipLine(me, them.name, relationship));
 
   if (topic && mode !== 'closing') {

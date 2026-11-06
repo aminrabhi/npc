@@ -155,6 +155,22 @@ try {
   check('prompt asks for specific personal detail', /personal and specific/i.test(prompt[0].content));
   check('prompt does not steer toward village or city life', !/\b(village|city)\b/i.test(prompt[0].content), prompt[0].content);
   check('prompt redirects away from where they live', /where you live/i.test(prompt[0].content));
+  check('prompt locks the speaker to their own identity', /Only write your own words/i.test(prompt[0].content));
+  check('prompt names the speaker and listener without swapping them', /The only two people here are Mama Green and Timmy/i.test(prompt[1].content), prompt[1].content);
+  check('prompt says who is being answered', /Timmy is the person you are talking with/i.test(prompt[1].content), prompt[1].content);
+
+  const groupPrompt = buildMessages({
+    speaker: { name: 'Mama Green' },
+    listener: { name: 'Timmy' },
+    mode: 'reply',
+    history: [
+      { speakerName: 'Mama Green', text: 'Hello.' },
+      { speakerName: 'Timmy', text: 'Hi.' },
+      { speakerName: 'Old Tom', text: 'Evening.' },
+    ],
+  });
+  check('group prompt names everyone in the conversation', /The people in this conversation are Mama Green, Timmy, Old Tom/i.test(groupPrompt[1].content), groupPrompt[1].content);
+  check('group prompt says which person is being answered', /Timmy is the person you are answering/i.test(groupPrompt[1].content), groupPrompt[1].content);
 
   const learnedPrompt = buildMessages({
     speaker: { name: 'Mama Green', avoidTopics: ['a bet you lost'], goodHabits: ['the sea'] },

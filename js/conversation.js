@@ -396,13 +396,39 @@ export function createConversations({
     return npcsOf(session).find((npc) => npc && npc.config && npc.config.id === id) || null;
   }
 
-  // The next speaker is the next participant in order, so a pair alternates and a
-  // group goes around the circle. One conversation uses one rule for every size.
+  // The last person who actually spoke, ignoring the current speaker. Extra
+  // follow-up bubbles belong to the same speaker, so they do not change the turn.
+  function lastSpokenId(session, excludeId = null) {
+    for (let i = session.messages.length - 1; i >= 0; i -= 1) {
+      const id = session.messages[i] && session.messages[i].speakerId;
+      if (!id || id === excludeId) continue;
+      return id;
+    }
+    return null;
+  }
+
+  // The next speaker follows the person who actually spoke last, not the total
+  // message count. Counting modulo the participant list breaks when a third person
+  // joins: it can hand the turn straight back to the player or skip a villager.
+  // The old count is only a fallback for an empty transcript.
   function speakerAt(session, turn = turns(session)) {
+    const lastId = lastSpokenId(session);
+    if (lastId) {
+      const at = session.participants.findIndex((participant) => participant.id === lastId);
+      if (at >= 0) return session.participants[(at + 1) % session.participants.length] || null;
+    }
     return session.participants[turn % session.participants.length] || null;
   }
 
+  // The listener is the person who just spoke and is being answered, not merely the
+  // next person in the circle. In a three-person chat the next participant can be a
+  // bystander; using them makes the prompt address the reply to the wrong name.
   function listenerAfter(session, speakerId) {
+    const lastId = lastSpokenId(session, speakerId);
+    if (lastId) {
+      const last = session.participants.find((participant) => participant.id === lastId);
+      if (last) return last;
+    }
     const at = session.participants.findIndex((participant) => participant.id === speakerId);
     if (at < 0) return null;
     return session.participants[(at + 1) % session.participants.length] || null;
@@ -452,8 +478,26 @@ export function createConversations({
     const session = sessions.get(sessionId);
     if (!session || session.status !== 'active' || !playerNpc || !playerNpc.config) return null;
     if (session.humanId) return session.humanId === playerNpc.config.id ? session : null;
+    // Adding a voice while a line is already being written makes the pending reply
+    // answer the old pair, not the player. Let that line land first.
+    if (session.pending) return null;
     if (!join(session, playerNpc, { ignoreCooldown: true })) return null;
     session.humanId = playerNpc.config.id;
+
+    // Put the player immediately after the person who was speaking so the circle
+    // genuinely hands them the next turn. Appending them at the end only works when
+    // the last speaker happened to be the final participant already.
+    const lastId = lastSpokenId(session);
+    if (lastId) {
+      const at = session.participants.findIndex((participant) => participant.id === lastId);
+      if (at >= 0 && at < session.participants.length - 1) {
+        const playerPart = session.participants.pop();
+        const playerBody = session.npcs.pop();
+        session.participants.splice(at + 1, 0, playerPart);
+        session.npcs.splice(at + 1, 0, playerBody);
+      }
+    }
+
     session.awaitingHuman = true;
     session.target = Math.max(session.target, turns(session) + 4);
     return session;
@@ -920,6 +964,10 @@ export function createConversations({
           session.awaitingHuman = true;
           continue;
         }
+        // The waiting flag can be left over from a join that happened while a reply
+        // was in flight. Once the circle has moved on to a villager, do not wait for
+        // a human turn that is not theirs.
+        session.awaitingHuman = false;
       }
       if (session.awaitingHuman) continue;
 

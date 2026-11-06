@@ -394,6 +394,92 @@ if (group) {
   check('the group conversation finishes', group.outcome === 'complete' || group.outcome === 'abandoned', `${group.outcome} ${group.closeReason}`);
 }
 
+console.log('\nplayer conversation identities');
+const capturedPayloads = [];
+const captureAi = {
+  canGenerate: () => true,
+  availability: () => ({ configured: true, available: true, fallback: false, coolingDown: false }),
+  generate: async (payload) => {
+    capturedPayloads.push(payload);
+    return { ok: true, text: 'Understood.', extra: [], model: 'test', ms: 1 };
+  },
+};
+const playerEntry = {
+  id: 'npc_p',
+  name: 'Amin Rabhi',
+  personality: ['plain'],
+  profile: {
+    interests: ['walking the village'],
+    likes: ['quiet mornings'],
+    dislikes: [],
+    tendencies: [],
+    memories: [],
+    style: 'plain',
+    social: { sociability: 0.5, newsInterest: 0.2 },
+  },
+};
+const playerRoster = [...roster, playerEntry];
+const playerConversations = createConversations({
+  roster: playerRoster,
+  ai: captureAi,
+  relationships,
+  memories: memoryStore,
+  news: null,
+  rng: rngFrom(41),
+  environment: () => ({ timeOfDay: 'morning', weather: null }),
+});
+const pA = { config: { id: 'npc_a' }, sim: { state: 'talking', dialogue: null, partner: null, session: null }, x: 0, y: 0, room: null };
+const pB = { config: { id: 'npc_b' }, sim: { state: 'talking', dialogue: null, partner: null, session: null }, x: 4, y: 0, room: null };
+const pPlayer = { config: { id: 'npc_p' }, sim: { state: 'talking', dialogue: null, partner: pA, session: null }, x: 8, y: 0, room: null };
+pA.sim.partner = pB;
+pB.sim.partner = pA;
+playerConversations.resetCooldowns();
+const joinedPair = playerConversations.begin(pA, pB);
+check('a pair starts before the player joins', !!joinedPair);
+if (joinedPair) {
+  playerConversations.update(0.5);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  check('the opening is addressed to the other villager', capturedPayloads[0]
+    && capturedPayloads[0].speaker.name === 'Ada'
+    && capturedPayloads[0].listener.name === 'Bram', JSON.stringify(capturedPayloads[0] && [capturedPayloads[0].speaker.name, capturedPayloads[0].listener.name]));
+
+  const joined = playerConversations.joinPlayer(joinedPair.id, pPlayer);
+  check('the player can join a live pair', !!joined);
+  check('the player is placed after the last speaker', joined
+    && joined.participants.map((participant) => participant.id).join('|') === 'npc_a|npc_p|npc_b',
+    joined && joined.participants.map((participant) => participant.id).join('|'));
+  check('joining gives the player the next turn', !!joined && joined.awaitingHuman === true);
+
+  const said = playerConversations.playerSay(joinedPair.id, 'Hello, both of you.');
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const replyPayload = capturedPayloads[capturedPayloads.length - 1];
+  check('the player line is accepted', said.ok === true, JSON.stringify(said));
+  check('the villager after the player answers the player', replyPayload
+    && replyPayload.speaker.name === 'Bram'
+    && replyPayload.listener.name === 'Amin Rabhi',
+    JSON.stringify(replyPayload && [replyPayload.speaker.name, replyPayload.listener.name]));
+  check('the reply history marks the player as the last speaker', replyPayload
+    && replyPayload.history.length > 0
+    && replyPayload.history[replyPayload.history.length - 1].speakerName === 'Amin Rabhi',
+    JSON.stringify(replyPayload && replyPayload.history.slice(-1)));
+  check('the group reply is not addressed to the bystander', replyPayload
+    && replyPayload.listener.name !== 'Ada', replyPayload && replyPayload.listener.name);
+  playerConversations.finish(joinedPair, 'abandoned', 'test');
+}
+
+const solo = playerConversations.beginPlayer(pPlayer, pA);
+check('a one-to-one player chat starts', !!solo);
+if (solo) {
+  playerConversations.playerSay(solo.id, 'Just the two of us.');
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const soloPayload = capturedPayloads[capturedPayloads.length - 1];
+  check('a one-to-one reply names the NPC as speaker and the player as listener', soloPayload
+    && soloPayload.speaker.name === 'Ada'
+    && soloPayload.listener.name === 'Amin Rabhi',
+    JSON.stringify(soloPayload && [soloPayload.speaker.name, soloPayload.listener.name]));
+  playerConversations.finish(solo, 'abandoned', 'test');
+}
+
 console.log(`\n${checks - failures}/${checks} checks passed.`);
 if (failures) {
   console.error(`${failures} failing check(s).`);
