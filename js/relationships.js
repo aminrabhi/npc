@@ -396,6 +396,10 @@ export function createRelationships({
     // the two existing friendships the village starts with, so day one is not ten
     // strangers: a couple of neighbours already know each other
     const seeds = [
+      // One long-standing grudge, so a bad relationship is something the village can
+      // actually show: this pair argues more often and can come to blows.
+      ['npc_02', 'npc_06', -24, 0.5, 0.5],
+      ['npc_06', 'npc_02', -20, 0.45, 0.42],
       ['npc_04', 'npc_08', 22, 0.35],
       ['npc_08', 'npc_04', 26, 0.35],
       ['npc_09', 'npc_03', 14, 0.22],
@@ -403,12 +407,13 @@ export function createRelationships({
       ['npc_07', 'npc_05', 9, 0.18],
       ['npc_05', 'npc_07', 7, 0.15],
     ];
-    for (const [npcId, otherId, score, familiarity] of seeds) {
+    for (const [npcId, otherId, score, familiarity, dislike = 0] of seeds) {
       const record = recordFor(npcId, otherId);
       if (record.interactions > 0) continue;
       record.score = score;
       record.familiarity = familiarity;
       record.trust = 0.4;
+      record.dislike = clamp(dislike, 0);
       record.interactions = 2;
       record.category = deriveCategory(record);
       dirty.add(keyOf(npcId, otherId));

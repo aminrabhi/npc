@@ -699,6 +699,24 @@ export function createLifestyle({
       npc.waitTime = 0.15;
     },
 
+    // Put two villagers face to face and hold them there while something outside the
+    // normal conversation manager (a scripted chat or a fight) uses them. Their timer
+    // is parked far enough out that the day does not reclaim them mid-scene.
+    pose(a, b) {
+      if (!a || !b || a === b) return false;
+      for (const [npc, sim, partner] of [[a, simOf(a), b], [b, simOf(b), a]]) {
+        stopForTalk(npc);
+        sim.state = 'talking';
+        sim.partner = partner;
+        sim.timer = 600;
+        sim.approachTime = 0;
+        sim.session = null;
+        sim.dialogue = null;
+      }
+      faceEachOther(a, b);
+      return true;
+    },
+
     // Debug hook inherited from the room editor: walk a villager into a room, let
     // them look around for a moment, then hand them back to the lifestyle machine.
     visit(npc, room) {

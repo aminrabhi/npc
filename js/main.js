@@ -24,6 +24,9 @@ import { createMemories } from './memories.js';
 import { createConversations } from './conversation.js';
 import { createConvLogs } from './conv_logs.js';
 import { createRelPanel } from './rel_panel.js';
+import { loadItems } from './items.js';
+import { createSocial } from './social.js';
+import { createScriptPanel } from './script_panel.js';
 
 // Grass marks the tile grid and nothing else, so the area you can place tiles on is
 // obvious in any window shape. Everything outside it is painted in this colour.
@@ -91,6 +94,7 @@ async function init() {
     loadVillage('data/village.json'),
     loadNpcRoster('data/npcs.json'),
     loadNpcAssets(),
+    loadItems(),
   ]);
 
   // Names are painted straight onto the canvas, so the pixel font has to be ready
@@ -218,6 +222,9 @@ async function init() {
     rng,
     // the lifestyle machine hands the pair back once the chat is over
     onHandBack: (npc) => { if (state.lifestyles) state.lifestyles.handBack(npc); },
+    // A row that ends badly can turn into a real fight, but only between villagers
+    // whose relationship records already say they cannot stand each other.
+    onEnd: (session) => { if (state.social) state.social.escalate(session); },
     // What a villager would notice at this moment. Read fresh for every line, so a
     // conversation that runs past sunset starts mentioning the evening.
     environment: () => {
@@ -398,6 +405,62 @@ async function init() {
     roster: state.roster,
     conversations: state.conversations,
   });
+  // Player interactions, fights and the conversation scripting panel. Fights are
+  // scored by the same relationship records conversations use, so a brawl costs the
+  // pair real standing instead of being a one-off animation.
+  state.social = createSocial({
+    relationships: state.relationships,
+    getNpcs: () => state.npcs,
+    lifestyle: state.lifestyles,
+    conversations: state.conversations,
+    rng,
+  });
+  state.scriptPanel = createScriptPanel({
+    roster: state.roster,
+    social: state.social,
+    getNpcs: () => state.npcs,
+  });
+
+  // Left click punishes, right click pets. The listener only acts when neither
+  // editor is open, so painting tiles and dragging villagers are untouched.
+  function uiBusy() {
+    return state.editing
+      || !!(state.studio && state.studio.isOpen && state.studio.isOpen());
+  }
+
+  function npcAtPointer(ev) {
+    const rect = canvas.getBoundingClientRect();
+    const x = (ev.clientX - rect.left - state.offset.x) / state.scale;
+    const y = (ev.clientY - rect.top - state.offset.y) / state.scale;
+    let best = null;
+    let bestGap = Infinity;
+    for (const npc of state.npcs) {
+      if (Math.abs(x - npc.x) > 11) continue;
+      if (y < npc.y - 28 || y > npc.y + 6) continue;
+      const gap = Math.hypot(x - npc.x, y - (npc.y - 10));
+      if (gap < bestGap) {
+        bestGap = gap;
+        best = npc;
+      }
+    }
+    return best;
+  }
+
+  canvas.addEventListener('click', (ev) => {
+    if (uiBusy()) return;
+    const npc = npcAtPointer(ev);
+    if (npc) state.social.punish(npc);
+  });
+
+  canvas.addEventListener('contextmenu', (ev) => {
+    if (uiBusy()) return;
+    ev.preventDefault();
+    const npc = npcAtPointer(ev);
+    if (npc) state.social.pet(npc);
+  });
+
+  window.__social = state.social;
+  window.__scriptPanel = state.scriptPanel;
   window.__conv = state.conversations;
   window.__rel = state.relationships;
   window.__mem = state.memories;
@@ -482,6 +545,7 @@ function frame(time) {
 
   if (!state.editing) {
     state.lifestyles.update(dt);
+    if (state.social) state.social.update(dt);
   }
   render();
   requestAnimationFrame(frame);

@@ -994,3 +994,33 @@ html, body {
 .sim-mode.dlg-cached { color: #e8cf7a; border-color: #5a4d22; }
 .sim-mode.dlg-offline { color: #8fb7f0; border-color: #2b3f5e; }
 .cl-tag.cl-cached { color: #e8cf7a; border-color: #5a4d22; }
+
+/* Scripted conversations: a wide, monospaced text block inside the debug dock. */
+.script-area {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 108px;
+  resize: vertical;
+  padding: 6px 7px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10px;
+  line-height: 1.45;
+  color: #fff4cf;
+  background: rgba(15, 13, 28, 0.82);
+  border: 1px solid rgba(255, 233, 168, 0.35);
+  border-radius: 3px;
+}
+
+.script-area:focus {
+  outline: none;
+  border-color: rgba(255, 233, 168, 0.7);
+}
+
+#script-panel .sim-select {
+  min-width: 0;
+  flex: 1 1 0;
+}
+
+#script-panel .sim-row {
+  flex-wrap: wrap;
+}

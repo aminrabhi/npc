@@ -6,6 +6,7 @@
 // BFS pathing, collision guard and doorway rules as before.
 
 import { findPath, doorApproach } from './pathing.js';
+import { drawHeldItem } from './items.js';
 
 const CELL_W = 96;
 const CELL_H = 64;
@@ -32,6 +33,9 @@ export class NPC {
 
     this.sheets = sheets;
     this.name = name || '';
+    // What this villager carries in their hand when they are not fighting. The
+    // sword replaces it for the length of a fight and is handed back afterwards.
+    this.heldItem = (config && config.heldItem) || null;
 
     const T = village.tileSize;
     const start = cell || home || { x: 0, y: 0 };
@@ -519,8 +523,14 @@ export class NPC {
 
   // ------------------------------------------------------------------- drawing
   draw(ctx) {
-    const px = Math.round(this.x);
-    const py = Math.round(this.y);
+    const sim = this.sim || {};
+    // A fight is a short lunge towards the other villager, not a new sprite: the
+    // body strip steps forward and back while the sword swings in the hand.
+    const lunge = sim.fighting ? Math.round(Math.sin(this.animTime * 9) * 2) : 0;
+    // Being punished makes them shrink a pixel; being petted makes them bob.
+    const bow = sim.react === 'punish' ? 1 : 0;
+    const px = Math.round(this.x) + lunge * this.facing;
+    const py = Math.round(this.y) + bow;
 
     const sheet = this.moving ? this.sheets.walk : this.sheets.idle;
     const frames = this.moving ? WALK_FRAMES : IDLE_FRAMES;
@@ -543,6 +553,8 @@ export class NPC {
         px - FEET_X, py - FEET_Y, CELL_W, CELL_H,
       );
     }
+    // inside the facing flip, so the item stays in the same hand when they turn
+    drawHeldItem(ctx, this, px, py);
     ctx.restore();
 
     this.drawName(ctx);
