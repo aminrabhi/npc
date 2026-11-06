@@ -115,7 +115,7 @@ export function buildMessages({
 
   const system = [
     `You are ${me.name}. Write only ${me.name}'s spoken words.`,
-    'You live in a quiet place, but it is never the subject: you talk about the world outside it.',
+    'You live in a small village. It is your home, and ordinary village life is part of what you talk about: the garden, the weather, a path, the square, a neighbour, something you noticed today. The wider world is fair too, but do not make every line about the city.',
     me.personality ? `Personality: ${me.personality}.` : '',
     me.backstory ? `Backstory: ${me.backstory}` : '',
     me.notes ? `Quirks: ${me.notes}` : '',
@@ -126,8 +126,8 @@ export function buildMessages({
     me.style ? `Speaking style: ${me.style}.` : '',
     `Keep it to one or two short sentences, at most ${MAX_WORDS} words and under ${LINE_BUDGET.chars} characters in total: a speech bubble holds two lines of about ${LINE_BUDGET.lineChars} characters. If a thought needs more room, reword it shorter. Never stop mid-sentence, never trail off with an ellipsis.`,
     'Talk like a real person in a casual chat: plain everyday words, short sentences, contractions. No fancy or literary vocabulary, no speeches, no clever phrasing.',
-    'Never talk about the village or village life. Do not say the words village, town, square, market, bakery, well, mill, harvest, mayor, neighbours, locals or gossip, and do not talk about what everyone round here is doing. Not even to complain about it.',
-    'Before you answer, check your line for those words. If one is there, throw the whole line away and write about something else: the city, money, food, music, work, family, the past, dreams, sport, something strange you saw.',
+    'Do not fall back on generic village small talk. Be specific: a person, a place, a small thing that happened today. The city is somewhere else; do not turn every conversation into a story about it.',
+    'Before you answer, check that the line is specific and sounds like something this person would actually say today, not a generic remark about the village or a story about the city.',
     mood === 'tense'
       ? 'You are already annoyed with them before they speak. Be short, sharp and unfair. Pick at something they did. Do not soften it, and do not apologise unless you mean it.'
       : '',
@@ -146,7 +146,7 @@ export function buildMessages({
   scene.push(relationshipLine(me, them.name, relationship));
 
   if (topic && mode !== 'closing') {
-    scene.push(`If the talk needs a subject, bring up ${topic}. It is your own business, not news from this place.`);
+    scene.push(`If the talk needs a subject, bring up ${topic}. It is something you noticed or wondered about yourself, not a news bulletin.`);
   }
 
   if (relationshipChange) {

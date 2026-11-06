@@ -45,7 +45,7 @@ export function createAiClient({
     'rate_limited', 'rate_limit_exceeded', 'rate_limit_error',
   ]);
   // The model answered, the answer was unusable: worth a short pause, not a long one.
-  const CONTENT_CODES = new Set(['groq_village_talk', 'groq_empty_reply']);
+  const CONTENT_CODES = new Set(['groq_empty_reply']);
   const status = {
     checked: false,
     configured: false,

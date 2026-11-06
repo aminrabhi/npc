@@ -150,10 +150,9 @@ const server = http.createServer(async (req, res) => {
       json(res, 404, { error: { message: `The model ${body && body.model} does not exist`, code: 'model_not_found' } });
       return;
     }
-    // Two modes for the village-talk guard: a model that drifts once and then obeys,
-    // and one that will not talk about anything else.
-    const driftOnce = process.env.MOCK_GROQ === 'village_once' && stats.chat === 0;
-    if (process.env.MOCK_GROQ === 'village' || driftOnce) {
+    // A model that will only talk about the village, used to prove village life is
+    // accepted rather than filtered out.
+    if (process.env.MOCK_GROQ === 'village') {
       stats.chat += 1;
       json(res, 200, {
         id: `chatcmpl_${stats.chat}`,

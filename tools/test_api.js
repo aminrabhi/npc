@@ -11,7 +11,6 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sanitiseLine, sanitiseMessages } from '../server/groq.js';
 import { buildMessages } from '../server/prompts.js';
-import { talksAboutVillage, stripVillageTalk } from '../server/village_filter.js';
 import { generateLine } from '../api/chat.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -133,33 +132,18 @@ try {
   check('each split message still fits a bubble', split.every((part) => part.length <= 110), JSON.stringify(split));
   check('a split keeps the finished sentence at the end', /[.!?]$/.test(split[split.length - 1]), JSON.stringify(split[split.length - 1]));
 
-  console.log('\nvillage talk');
-  check('village talk is detected', talksAboutVillage('The whole village was at the square.'));
-  check('an ordinary line passes', !talksAboutVillage('I could eat a whole pie.'));
-  check('village life is caught by more than one word', talksAboutVillage('I heard it from the neighbours.') && talksAboutVillage('The harvest is late this year.'));
-  check('a good sentence survives the bad one', stripVillageTalk('I could eat a whole pie. The village was quiet.') === 'I could eat a whole pie.', JSON.stringify(stripVillageTalk('I could eat a whole pie. The village was quiet.')));
-
+  console.log('\nvillage life');
   const fake = (text) => ({ text, extra: [], model: 'allam-2-7b' });
   let attempts = 0;
-  const retried = await generateLine({
+  const villageLine = await generateLine({
     messages: [],
     complete: async () => {
       attempts += 1;
-      return attempts === 1 ? fake('The village was busy today.') : fake('I could eat a whole pie.');
+      return fake('The whole village was at the square today.');
     },
   });
-  check('a village line is regenerated', attempts === 2 && retried.text === 'I could eat a whole pie.', `${attempts} ${retried.text}`);
-  check('the retry is recorded on the reply', retried.retried === true);
-
-  let stubborn = 0;
-  let refused = null;
-  try {
-    await generateLine({ messages: [], complete: async () => { stubborn += 1; return fake('The village square was busy.'); } });
-  } catch (error) {
-    refused = error;
-  }
-  check('village talk that survives the retry is refused', !!refused && refused.code === 'groq_village_talk', refused && refused.code);
-  check('the retry is bounded to one extra call', stubborn === 2, `${stubborn}`);
+  check('a village line is spoken as written', villageLine.text === 'The whole village was at the square today.', villageLine.text);
+  check('a village line is not retried or cleaned', villageLine.retried === false && villageLine.cleaned === false && attempts === 1, `${attempts} ${JSON.stringify(villageLine)}`);
 
   const prompt = buildMessages({ speaker: { name: 'Mama Green' }, listener: { name: 'Timmy' }, mode: 'opening' });
   check('prompt asks for one or two short sentences', /one or two short sentences/i.test(prompt[0].content));
@@ -167,8 +151,9 @@ try {
   check('prompt tells the model not to recite its backstory', /background, not a script/i.test(prompt[0].content));
   check('prompt asks for the message only, with no count', /no character or word count/i.test(prompt[0].content));
   check('prompt asks for plain casual words', /plain everyday words/i.test(prompt[0].content));
-  check('prompt bans village talk by name', /Never talk about the village or village life/i.test(prompt[0].content));
-  check('prompt asks the model to self-check for village words', /check your line for those words/i.test(prompt[0].content));
+  check('prompt lets villagers talk about village life', /ordinary village life/i.test(prompt[0].content));
+  check('prompt asks for specific local detail', /Be specific/i.test(prompt[0].content));
+  check('prompt keeps the city from taking over', /story about the city/i.test(prompt[0].content));
 
   console.log('\nchat');
   const conversation = {
@@ -219,33 +204,20 @@ try {
   check('unconfigured chat explains itself', bareChat.status === 503 && bareChatBody.error.code === 'groq_not_configured', `status ${bareChat.status}`);
   check('unconfigured error names GROQ_API_KEY', /GROQ_API_KEY/.test(bareChatBody.error.message + JSON.stringify(bareChatBody.error)));
 
-  console.log('\nvillage talk over HTTP');
-  const driftMock = 4214;
-  const driftApi = 4215;
-  children.push(start('tools/mock_backends.js', [String(driftMock)], { MOCK_GROQ: 'village_once' }));
-  await waitFor(`http://127.0.0.1:${driftMock}/_stats`);
-  children.push(start('tools/api_server.js', [String(driftApi)], {
+  console.log('\nvillage line over HTTP');
+  const villageMock = 4214;
+  const villageApi = 4215;
+  children.push(start('tools/mock_backends.js', [String(villageMock)], { MOCK_GROQ: 'village' }));
+  await waitFor(`http://127.0.0.1:${villageMock}/_stats`);
+  children.push(start('tools/api_server.js', [String(villageApi)], {
     ...configuredEnv,
-    GROQ_BASE_URL: `http://127.0.0.1:${driftMock}/openai/v1`,
+    GROQ_BASE_URL: `http://127.0.0.1:${villageMock}/openai/v1`,
   }));
-  await waitFor(`http://127.0.0.1:${driftApi}/api/status`);
-  const driftChat = await post(`http://127.0.0.1:${driftApi}/api/chat`, { ...conversation, conversationId: 'c_village_1' });
-  const driftBody = await driftChat.json();
-  check('a village line is regenerated over HTTP', driftChat.status === 200 && !!driftBody.message && !talksAboutVillage(driftBody.message.text), JSON.stringify(driftBody.message || driftBody.error));
-  check('the regenerated line is flagged', driftBody.message && driftBody.message.retried === true);
-
-  const stuckMock = 4216;
-  const stuckApi = 4217;
-  children.push(start('tools/mock_backends.js', [String(stuckMock)], { MOCK_GROQ: 'village' }));
-  await waitFor(`http://127.0.0.1:${stuckMock}/_stats`);
-  children.push(start('tools/api_server.js', [String(stuckApi)], {
-    ...configuredEnv,
-    GROQ_BASE_URL: `http://127.0.0.1:${stuckMock}/openai/v1`,
-  }));
-  await waitFor(`http://127.0.0.1:${stuckApi}/api/status`);
-  const stuckChat = await post(`http://127.0.0.1:${stuckApi}/api/chat`, { ...conversation, conversationId: 'c_village_2' });
-  const stuckBody = await stuckChat.json();
-  check('a model stuck on village talk is reported, not spoken', stuckChat.status === 502 && stuckBody.error && stuckBody.error.code === 'groq_village_talk', JSON.stringify(stuckBody.error));
+  await waitFor(`http://127.0.0.1:${villageApi}/api/status`);
+  const villageChat = await post(`http://127.0.0.1:${villageApi}/api/chat`, { ...conversation, conversationId: 'c_village_1' });
+  const villageBody = await villageChat.json();
+  check('a village line is allowed over HTTP', villageChat.status === 200 && !!villageBody.message && /village/i.test(villageBody.message.text), JSON.stringify(villageBody.message || villageBody.error));
+  check('the village line is not flagged as retried', villageBody.message && villageBody.message.retried === false && villageBody.message.cleaned === false, JSON.stringify(villageBody.message));
 
   console.log('\nmodel misconfiguration');
   const wrongModelChild = start('tools/api_server.js', ['4213'], { ...configuredEnv, GROQ_MODEL: 'not-a-model' });

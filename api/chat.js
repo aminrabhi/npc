@@ -11,7 +11,6 @@
 import { route, readJson, requireMethod, sendJson, rateLimit, asString, asNumber, asArray, HttpError, clientKey } from '../server/http.js';
 import { chatCompletion, GroqError } from '../server/groq.js';
 import { buildMessages } from '../server/prompts.js';
-import { stripVillageTalk, villageTerm } from '../server/village_filter.js';
 import { config } from '../server/env.js';
 
 const MODES = new Set(['opening', 'reply', 'closing']);
@@ -24,51 +23,16 @@ const MAX_MESSAGES = 12;
 // 4,096 token window of allam-2-7b.
 const TEMPERATURE = { opening: 0.95, reply: 0.85, closing: 0.8 };
 
-// Restated as the very last thing the model reads, because a rule in a long system
-// prompt is the first thing a small model forgets. Only ever used after a line has
-// already been rejected for talking about the village.
-const CORRECTION = 'That line was about the village. Villagers never discuss the village, its square, its market, its neighbours or village life. Write it again about something else - the wider world, or the subject you were given - in one or two short sentences, without those words.';
-
-// Sentence-level cleaning: a line that mixes a good sentence with village gossip keeps
-// the good one, so the villager still says something instead of losing the turn.
-export function cleanReply(result) {
-  const source = [result.text, ...(Array.isArray(result.extra) ? result.extra : [])].filter(Boolean);
-  const kept = source.map(stripVillageTalk).filter(Boolean);
-  return {
-    ...result,
-    text: kept[0] || '',
-    extra: kept.slice(1),
-    cleaned: source.length > 0 && kept.length < source.length,
-  };
-}
-
-// Generate one line that is actually allowed to be spoken. `complete` is injectable so
-// the retry path can be tested without a model.
+// Generate one villager line. `complete` is injectable so this can be tested without
+// a model. Village life is a normal subject: the line is spoken as written.
 export async function generateLine({
   messages,
   temperature = 0.85,
   timeoutMs = 9000,
-  retryTimeoutMs = 6000,
   complete = chatCompletion,
 } = {}) {
-  const first = cleanReply(await complete({ messages, temperature, maxTokens: 96, timeoutMs }));
-  if (first.text) return first;
-
-  // The whole line was village talk. One retry only: the browser is waiting, and a
-  // third attempt would outlast its own request timeout.
-  const second = cleanReply(await complete({
-    messages: [...messages, { role: 'system', content: CORRECTION }],
-    temperature: Math.min(1, temperature + 0.05),
-    maxTokens: 96,
-    timeoutMs: retryTimeoutMs,
-  }));
-  if (second.text) return { ...second, retried: true };
-
-  throw new GroqError('Groq kept steering the line back to village talk.', {
-    status: 502,
-    code: 'groq_village_talk',
-    detail: villageTerm(first.text) || null,
-  });
+  const result = await complete({ messages, temperature, maxTokens: 96, timeoutMs });
+  return { ...result, cleaned: false, retried: false };
 }
 
 function validate(body) {
@@ -196,7 +160,7 @@ export default route(async (req, res) => {
         mode: body.mode,
         conversationId: body.conversationId,
         messageNumber: body.messageCount + 1,
-        // true when a village sentence was dropped, or the line had to be regenerated
+        // Kept for older clients: village life is no longer filtered or retried.
         cleaned: !!result.cleaned,
         retried: !!result.retried,
       },
