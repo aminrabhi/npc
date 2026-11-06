@@ -527,16 +527,18 @@ export class NPC {
     const sim = this.sim || {};
     // A fight is a short lunge towards the other villager, not a new sprite: the
     // body strip steps forward and back while the sword swings in the hand.
-    const attacking = sim.attackUntil && Date.now() < sim.attackUntil;
-    const lunge = sim.fighting
-      ? Math.round(Math.sin(this.animTime * (attacking ? 22 : 9)) * (attacking ? 4 : 2))
-      : 0;
+    const attackLeft = sim.attackUntil ? sim.attackUntil - Date.now() : 0;
+    const attacking = attackLeft > 0;
+    // A thrust that reaches towards the other villager, not a swing on the spot.
+    const thrust = attacking ? Math.round(Math.sin((1 - attackLeft / 320) * Math.PI) * 5) : 0;
+    // A hit knocks the defender a couple of pixels back.
+    const recoil = sim.hurtUntil && Date.now() < sim.hurtUntil ? 2 : 0;
     // Being punished makes them shrink a pixel; being petted makes them bob.
     const bow = sim.react === 'punish' ? 1 : 0;
     // Dazed villagers sway and sag where they stand until the stun runs out.
     const dazed = sim.stunned ? Math.round(Math.sin(this.animTime * 16)) : 0;
     const slump = sim.stunned ? 3 : 0;
-    const px = Math.round(this.x) + lunge * this.facing + dazed;
+    const px = Math.round(this.x) + (thrust - recoil) * this.facing + dazed;
     const py = Math.round(this.y) + bow + slump;
 
     const sheet = this.moving ? this.sheets.walk : this.sheets.idle;

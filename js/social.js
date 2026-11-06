@@ -345,14 +345,100 @@ export function createSocial({
       nextLine: 0.35,
       lineIndex: 0,
       turn: 0,
-      phase: 'brawl',
+      phase: 'approach',
       fleeing: null,
       chaser: null,
+      nextApproach: 0,
       nextFlee: 0,
       nextChase: 0,
       forced,
     };
+
+    // Both fighters are free to move from here; pose() left them planted.
+    for (const npc of [a, b]) npc.waitTime = 0;
+    const gap = Math.hypot(a.x - b.x, a.y - b.y);
+    if (gap <= 26) squareUp(fight);
     return { ok: true, fight };
+  }
+
+  // Walk both fighters at each other until they are close enough to square up. A
+  // debug fight can start with the pair on opposite sides of the village, so damage
+  // must never begin until they have actually closed the distance.
+  function approachStep(f) {
+    const { a, b } = f;
+    const gap = Math.hypot(b.x - a.x, b.y - a.y);
+    if (gap <= 26) {
+      squareUp(f);
+      return;
+    }
+    a.facing = b.x >= a.x ? 1 : -1;
+    b.facing = -a.facing;
+    if (f.elapsed >= f.nextApproach) {
+      stepToward(a, b);
+      stepToward(b, a);
+      f.nextApproach = f.elapsed + 0.45;
+    }
+  }
+
+  function stepToward(npc, other) {
+    if (!npc.village) return false;
+    const path = findPath(npc.village, npc.tile, other.tile, { avoid: npc.village.doorways });
+    if (path && path.length) {
+      npc.path = path;
+      npc.waitTime = 0;
+      npc.moving = true;
+      return true;
+    }
+    return false;
+  }
+
+  // Stop the walk, turn them into each other and let the pixel-level stance finish
+  // the approach. Normal fights start about a body-length apart.
+  function squareUp(f) {
+    f.phase = 'brawl';
+    for (const [npc, other] of [[f.a, f.b], [f.b, f.a]]) {
+      npc.path = [];
+      npc.moving = false;
+      npc.waitTime = 0;
+      npc.facing = other.x >= npc.x ? 1 : -1;
+    }
+    f.attackAt = Math.max(f.attackAt, f.elapsed + 0.35);
+  }
+
+  function moveFighter(npc, dx, dy) {
+    if (!npc.village) {
+      npc.x += dx;
+      npc.y += dy;
+      return;
+    }
+    if (npc.village.feetBlockedAt && npc.village.feetBlockedAt(npc.x + dx, npc.y + dy)) return;
+    npc.x += dx;
+    npc.y += dy;
+  }
+
+  // Close the last few pixels smoothly instead of teleporting: both fighters step in,
+  // bodies end up all but touching, and the next sword thrust crosses the gap.
+  function squareUpStep(f, dt) {
+    const { a, b } = f;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const gap = Math.hypot(dx, dy);
+    if (gap > 14 && gap > 0.01) {
+      const ux = dx / gap;
+      const uy = dy / gap;
+      const move = Math.min(gap - 14, 26 * dt) / 2;
+      if (move > 0.01) {
+        moveFighter(a, ux * move, uy * move);
+        moveFighter(b, -ux * move, -uy * move);
+        a.moving = true;
+        b.moving = true;
+      }
+    } else {
+      a.moving = false;
+      b.moving = false;
+    }
+    a.facing = b.x >= a.x ? 1 : -1;
+    b.facing = -a.facing;
   }
 
   // A route to open ground as far from the attacker as possible, staying in the same
@@ -584,7 +670,9 @@ export function createSocial({
     if (fight) {
       const f = fight;
       f.elapsed += step;
-      if (f.phase === 'chase') chaseStep(f);
+      if (f.phase === 'approach') approachStep(f);
+      else if (f.phase === 'chase') chaseStep(f);
+      else squareUpStep(f, step);
 
       if (f.elapsed >= f.nextLine) {
         const speaker = f.lineIndex % 2 === 0 ? f.a : f.b;
@@ -595,10 +683,10 @@ export function createSocial({
         f.nextLine = f.elapsed + 0.8 + rng() * 0.4;
       }
 
-      const gap = f.phase === 'chase'
-        ? Math.hypot(f.chaser.x - f.fleeing.x, f.chaser.y - f.fleeing.y)
-        : 0;
-      if (f.elapsed >= f.attackAt && (f.phase !== 'chase' || gap < 30)) {
+      // Contact is required to hurt anyone: no invisible punches across the village.
+      const gap = Math.hypot(f.a.x - f.b.x, f.a.y - f.b.y);
+      const reach = f.phase === 'chase' ? 26 : 24;
+      if (f.elapsed >= f.attackAt && gap <= reach) {
         const attacker = f.phase === 'chase'
           ? f.chaser
           : (f.turn % 2 === 0 ? f.a : f.b);
@@ -611,6 +699,8 @@ export function createSocial({
 
         const attackerSim = simOf(attacker);
         if (attackerSim) attackerSim.attackUntil = now() + 320;
+        const defenderSim = simOf(defender);
+        if (defenderSim) defenderSim.hurtUntil = now() + 240;
         emote(defender, 'stress', 1000);
 
         if (hp <= 0) {

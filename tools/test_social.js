@@ -176,6 +176,27 @@ check('a forced fight arms both villagers with swords and then scores it', () =>
   assert.equal(applied[0].options.disagreement, true);
 });
 
+check('a fight deals no damage until the pair have closed the distance', () => {
+  const { social, npcs } = makeSocial();
+  npcs[1].x = 320; // across the village
+  const result = social.startFight(npcs[0], npcs[1], { forced: true });
+  assert.equal(result.ok, true);
+
+  for (let i = 0; i < 20; i += 1) social.update(0.2);
+  assert.equal(social.status().phase, 'approach');
+  assert.deepEqual(social.status().hp, [100, 100]);
+
+  // What NPC movement does in the village: once they are close, the fight squares up
+  // and only then can a sword land.
+  npcs[1].x = npcs[0].x + 20;
+  social.update(0.2);
+  assert.equal(social.status().phase, 'brawl');
+  for (let i = 0; i < 15; i += 1) social.update(0.2);
+  const hp = social.status().hp;
+  assert.ok(hp[0] < 100 || hp[1] < 100, `no damage was dealt at contact: ${hp}`);
+  social.stopAll();
+});
+
 check('a knocked-out villager recovers after the stun', () => {
   const { social, npcs, advance } = makeSocial();
   social.startFight(npcs[0], npcs[1], { forced: true });
