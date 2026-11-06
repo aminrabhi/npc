@@ -12,6 +12,7 @@ import {
   parseScript,
   createSocial,
 } from '../js/social.js';
+import { NPC } from '../js/npc.js';
 
 let passed = 0;
 function check(name, fn) {
@@ -174,6 +175,28 @@ check('a forced fight arms both villagers with swords and then scores it', () =>
   assert.equal(npcs[0].heldItem, null);
   assert.equal(applied.length, 1);
   assert.equal(applied[0].options.disagreement, true);
+});
+
+check('a fighter does not fall back to idle planning between blows', () => {
+  let planned = false;
+  let walked = false;
+  let idled = false;
+  const fighter = {
+    moving: true,
+    sim: { fighting: true },
+    get atHome() { return false; },
+    onPlan: () => { planned = true; },
+    walkHome: () => { walked = true; return true; },
+    idle: () => { idled = true; },
+  };
+  NPC.prototype.settle.call(fighter);
+  assert.equal(planned, false);
+  assert.equal(walked, false);
+  assert.equal(idled, false);
+
+  fighter.sim.fighting = false;
+  NPC.prototype.settle.call(fighter);
+  assert.equal(planned, true);
 });
 
 check('a fight deals no damage until the pair have closed the distance', () => {
