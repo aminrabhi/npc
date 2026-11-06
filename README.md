@@ -174,6 +174,34 @@ A villager only raises the news if their `newsInterest` says so, headlines are n
 repeated until the recent list rotates, and the prompt tells them they only know what the
 headline said.
 
+## Play as a character
+
+The **NPC studio** edits the roster. Choose an existing villager, or **+ New** to make
+one, then press **Play as** to take over their body. **Stop** hands them back to the
+village simulation without losing their relationships or memories.
+
+**Amin Rabhi** is the baked hero character. He is not part of the autonomous village
+simulation and does not spawn on page load. Press **I** to spawn him on a random bed;
+press **I** again to remove him. Walk around the room with **WASD** or the arrow keys,
+using the room's furniture collision. Walk into the doorway to step outside, and walk
+back into it from the street to enter the house again. An existing studio-created
+player character still restores normally, but the baked hero always waits for **I**.
+
+While playing:
+
+* **WASD** or the **arrow keys** walk around, using the village's normal collision.
+* **/** opens the one-line chat menu. Pick a nearby villager to start a conversation, or
+  join one that is already in progress.
+* Type a line and press **Enter** to send it. Pressing **Enter** with an empty input
+  closes the chat and leaves the conversation. **Esc** also closes it.
+* The NPCs answer through the same conversation engine, memories and relationship
+  changes as their own chats.
+
+The **Export** button in the playable-character section produces a `PLAYER_CHARACTER`
+entry. Paste it back in chat to hard-code that character, or use **Export NPC code** to
+take the whole roster. The character and the played character id are kept in local
+storage, so a refresh spawns the same character again until they are stopped.
+
 ## Debug interface
 
 One debug surface, as before: the tile editor panel. It now has two extra buttons.

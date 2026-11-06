@@ -8,7 +8,7 @@ import { findPath, largestRegion, doorApproach } from './pathing.js';
 import { NPC } from './npc.js';
 import { createEditor } from './editor.js';
 import { buildRoomCanvas, ROOM_LAYERS } from './interior.js';
-import { loadNpcRoster, loadNpcAssets, sheetsFor } from './npcs.js';
+import { loadNpcRoster, loadNpcAssets, sheetsFor, normaliseNpc } from './npcs.js';
 import { createNpcStudio } from './npc_studio.js';
 import { createClock } from './clock.js';
 import { createWeather } from './weather.js';
@@ -29,6 +29,9 @@ import { loadItems } from './items.js';
 import { loadEmotes } from './emotes.js';
 import { createSocial } from './social.js';
 import { createScriptPanel } from './script_panel.js';
+import { loadPlayerCharacter, savePlayerCharacter, clearPlayerCharacter } from './player_store.js';
+import { createPlayerController } from './player.js';
+import { createPlayerChat } from './player_chat.js';
 
 // Grass marks the tile grid and nothing else, so the area you can place tiles on is
 // obvious in any window shape. Everything outside it is painted in this colour.
@@ -48,6 +51,9 @@ const state = {
   editing: false,
   overlay: null,
   showRooms: false,
+  playerId: null,
+  heroId: null,
+  playerSpawned: false,
 };
 
 function mulberry32(seed) {
@@ -114,6 +120,27 @@ async function init() {
   state.roster = roster;
   state.npcAssets = npcAssets;
 
+  // A character made in the studio lives beside the baked roster so a refresh does
+  // not lose it. A character with player:true in data/npcs.json is the fallback
+  // default when no local player has been chosen yet.
+  const savedPlayer = loadPlayerCharacter();
+  if (savedPlayer && savedPlayer.character) {
+    const savedEntry = normaliseNpc(savedPlayer.character, roster.length);
+    if (savedPlayer.character.profile) savedEntry.profile = savedPlayer.character.profile;
+    const existing = roster.find((entry) => entry.id === savedEntry.id);
+    if (existing) Object.assign(existing, savedEntry);
+    else roster.push(savedEntry);
+  }
+  const bakedPlayer = roster.find((entry) => entry.player);
+  state.heroId = bakedPlayer ? bakedPlayer.id : null;
+  state.playerSpawned = false;
+  const savedPlayerId = savedPlayer && savedPlayer.playerId && roster.some((entry) => entry.id === savedPlayer.playerId)
+    ? savedPlayer.playerId
+    : null;
+  // The baked hero is summoned with I, so they never start in the village on their
+  // own. A locally saved custom character still restores as before.
+  state.playerId = savedPlayerId && savedPlayerId !== state.heroId ? savedPlayerId : null;
+
   // Time and weather are independent of the villagers: the lifestyle machine reads
   // them, the HUD shows them, and the debug panel can override either one.
   state.clock = createClock();
@@ -169,6 +196,8 @@ async function init() {
   function syncNpcs() {
     const next = [];
     for (const config of state.roster) {
+      // The baked hero only exists in the world after I summons them.
+      if (state.heroId && config.id === state.heroId && !state.playerSpawned) continue;
       const home = standable({ x: config.home[0], y: config.home[1] });
       config.home = [home.x, home.y];
 
@@ -195,6 +224,7 @@ async function init() {
         npc.setHome(home);
         npc.regionId = region[home.y * village.cols + home.x];
       }
+      npc.isPlayer = !!state.playerId && config.id === state.playerId;
       next.push(npc);
     }
     for (const id of [...state.byId.keys()]) {
@@ -205,6 +235,15 @@ async function init() {
 
   state.syncNpcs = syncNpcs;
   syncNpcs();
+
+  // The lifestyle planner and the autonomous social layer only ever drive ordinary
+  // villagers. The player character is moved by js/player.js.
+  const autonomousNpcs = () => state.npcs.filter((npc) => {
+    if (!npc.config) return true;
+    // The hero is never a simulated villager, even while waiting to be spawned.
+    if (state.heroId && npc.config.id === state.heroId) return false;
+    return !state.playerId || npc.config.id !== state.playerId;
+  });
 
   // Part 2: the social layer. Personalities come from the roster, dialogue from the
   // server-side Groq route, and relationships and memories save themselves in the
@@ -228,11 +267,22 @@ async function init() {
     lessons: state.lessons,
     news: state.news,
     rng,
-    // the lifestyle machine hands the pair back once the chat is over
-    onHandBack: (npc) => { if (state.lifestyles) state.lifestyles.handBack(npc); },
+    // the lifestyle machine hands the pair back once the chat is over; the player
+    // body is owned by the keyboard instead, so it gets a plain release.
+    onHandBack: (npc) => {
+      if (state.playerId && npc && npc.config && npc.config.id === state.playerId) {
+        if (state.player) state.player.release();
+        return;
+      }
+      if (state.lifestyles) state.lifestyles.handBack(npc);
+    },
     // A row that ends badly can turn into a real fight, but only between villagers
-    // whose relationship records already say they cannot stand each other.
-    onEnd: (session) => { if (state.social) state.social.escalate(session); },
+    // whose relationship records already say they cannot stand each other. Player
+    // chats do not escalate into a fight behind the player's back.
+    onEnd: (session) => {
+      if (session && session.humanId) return;
+      if (state.social) state.social.escalate(session);
+    },
     // What a villager would notice at this moment. Read fresh for every line, so a
     // conversation that runs past sunset starts mentioning the evening.
     environment: () => {
@@ -265,7 +315,7 @@ async function init() {
     clock: state.clock,
     weather: state.weather,
     roster: state.roster,
-    getNpcs: () => state.npcs,
+    getNpcs: autonomousNpcs,
     rng,
     conversations: state.conversations,
     // a friendship pulls two villagers together; a grudge keeps them apart
@@ -279,7 +329,7 @@ async function init() {
     const T = village.tileSize;
     state.npcs.forEach((npc, ordinal) => {
       const id = npc.config ? npc.config.id : null;
-      if (!id) return;
+      if (!id || (state.playerId && id === state.playerId)) return;
       const assignment = homes.assignment(id, ordinal);
       const bed = assignment.bed ? homes.bed(assignment.bed) : null;
       const record = assignment.room !== null ? homes.room(assignment.room) : null;
@@ -321,6 +371,9 @@ async function init() {
     atlas,
     onEditingChanged(open) {
       state.editing = open;
+      // The tile editor takes the mouse and the map, so a player chat cannot stay
+      // open over it.
+      if (open && state.playerChat) state.playerChat.close();
       // Villagers hold still while the map is being repainted, so a half-finished
       // house never leaves someone standing inside a wall.
       for (const npc of state.npcs) {
@@ -381,9 +434,127 @@ async function init() {
       syncNpcs();
       // personalities edited in the studio survive a reload
       saveProfiles(state.roster);
+      if (state.playerId) {
+        const playerEntry = state.roster.find((entry) => entry.id === state.playerId);
+        if (playerEntry) savePlayerCharacter(playerEntry, true);
+      }
+    },
+    onPlayerChange(id, entry, options = {}) {
+      if (state.playerChat) state.playerChat.close();
+      const previous = state.roster.find((candidate) => candidate.id === state.playerId) || null;
+      const switching = !!previous && previous.id !== id;
+      if (switching && state.player) state.player.release();
+      if (id) {
+        state.playerSpawned = id === state.heroId;
+        state.playerId = id;
+        const chosen = state.roster.find((candidate) => candidate.id === id) || entry || null;
+        syncNpcs();
+        // Spawn before saving: spawn() snaps a blocked home to a usable nearby tile,
+        // and that resolved tile is what the next reload should remember.
+        if (state.player) state.player.spawn();
+        if (chosen) savePlayerCharacter(chosen, true);
+        if (state.studio) state.studio.close();
+      } else {
+        // Release before clearing the id: the controller finds its body through it.
+        if (state.player) state.player.release();
+        if (previous && !options.remove) savePlayerCharacter(previous, false);
+        if (options.remove) clearPlayerCharacter();
+        state.playerSpawned = false;
+        state.playerId = null;
+        syncNpcs();
+        if (state.playerChat) state.playerChat.refresh();
+      }
     },
   });
   window.__studio = state.studio;
+
+  // A random bed is the summon point. Beds already occupied by an indoor villager
+  // are skipped unless there is no free one left.
+  function pickRandomBed() {
+    const homes = state.homes;
+    if (!homes || !Array.isArray(homes.beds) || !homes.beds.length) return null;
+    const occupied = new Set();
+    for (const npc of state.npcs) {
+      if (!npc || !npc.room) continue;
+      const tile = npc.tile;
+      occupied.add(`${tile.x},${tile.y}`);
+    }
+    const usable = (bed) => {
+      const record = homes.room(bed.room);
+      return !!(record && village.rooms[record.index]);
+    };
+    const free = homes.beds.filter((bed) => usable(bed)
+      && !occupied.has(`${Math.floor(bed.stand[0])},${Math.floor(bed.stand[1])}`));
+    const pool = free.length ? free : homes.beds.filter(usable);
+    const bed = pool[Math.floor(Math.random() * pool.length)];
+    if (!bed) return null;
+    const record = homes.room(bed.room);
+    return { bed, room: record ? village.rooms[record.index] : null };
+  }
+
+  function despawnHero() {
+    if (!state.heroId || state.playerId !== state.heroId) return;
+    if (state.playerChat) state.playerChat.close();
+    if (state.player) {
+      state.player.release();
+      state.player.clearKeys();
+    }
+    state.playerId = null;
+    state.playerSpawned = false;
+    syncNpcs();
+    if (state.playerChat) state.playerChat.refresh();
+  }
+
+  function spawnHeroOnBed() {
+    const entry = state.heroId ? state.roster.find((candidate) => candidate.id === state.heroId) : null;
+    if (!entry) return false;
+    if (state.playerChat) state.playerChat.close();
+    const previous = state.playerId ? state.roster.find((candidate) => candidate.id === state.playerId) : null;
+    if (previous && previous.id !== state.heroId && state.player) state.player.release();
+    state.playerId = state.heroId;
+    state.playerSpawned = true;
+    syncNpcs();
+    if (!state.player) return false;
+    const spot = pickRandomBed();
+    const placed = spot ? state.player.spawnOnBed(spot) : false;
+    if (!placed) state.player.spawn();
+    state.player.clearKeys();
+    if (state.playerChat) state.playerChat.refresh();
+    return true;
+  }
+
+  function toggleHeroSpawn() {
+    if (!state.heroId) return;
+    if (state.playerId === state.heroId) despawnHero();
+    else spawnHeroOnBed();
+  }
+
+  // The keyboard-owned character. It is still an ordinary NPC to the rest of the
+  // village; only its movement source and its chat input are different.
+  state.player = createPlayerController({
+    canvas,
+    state,
+    village,
+    getNpcs: () => state.npcs,
+    canControl: () => !state.editing
+      && !(state.studio && state.studio.isOpen && state.studio.isOpen())
+      && !(state.playerChat && state.playerChat.isOpen && state.playerChat.isOpen()),
+    openChat: () => { if (state.playerChat) state.playerChat.open(); },
+    onSummon: () => toggleHeroSpawn(),
+  });
+  state.playerChat = createPlayerChat({
+    state,
+    conversations: state.conversations,
+    getNpcs: () => state.npcs,
+    getPlayer: () => (state.player ? state.player.player() : null),
+  });
+  if (state.playerId) {
+    state.player.spawn();
+    // Persist the resolved spawn tile after a reload too, otherwise a home that was
+    // blocked in an older save would be re-resolved from scratch every time.
+    const activePlayer = state.roster.find((entry) => entry.id === state.playerId);
+    if (activePlayer) savePlayerCharacter(activePlayer, true);
+  }
 
   // One extra button on the existing editor panel opens the simulation controls.
   state.simPanel = createSimPanel({
@@ -418,7 +589,7 @@ async function init() {
   // pair real standing instead of being a one-off animation.
   state.social = createSocial({
     relationships: state.relationships,
-    getNpcs: () => state.npcs,
+    getNpcs: autonomousNpcs,
     lifestyle: state.lifestyles,
     conversations: state.conversations,
     rng,
@@ -426,14 +597,15 @@ async function init() {
   state.scriptPanel = createScriptPanel({
     roster: state.roster,
     social: state.social,
-    getNpcs: () => state.npcs,
+    getNpcs: autonomousNpcs,
   });
 
   // Left click punishes, right click pets. The listener only acts when neither
   // editor is open, so painting tiles and dragging villagers are untouched.
   function uiBusy() {
     return state.editing
-      || !!(state.studio && state.studio.isOpen && state.studio.isOpen());
+      || !!(state.studio && state.studio.isOpen && state.studio.isOpen())
+      || !!(state.playerChat && state.playerChat.isOpen && state.playerChat.isOpen());
   }
 
   function npcAtPointer(ev) {
@@ -457,14 +629,18 @@ async function init() {
   canvas.addEventListener('click', (ev) => {
     if (uiBusy()) return;
     const npc = npcAtPointer(ev);
-    if (npc) state.social.punish(npc);
+    if (npc && (!state.playerId || !npc.config || npc.config.id !== state.playerId)) {
+      state.social.punish(npc);
+    }
   });
 
   canvas.addEventListener('contextmenu', (ev) => {
     if (uiBusy()) return;
     ev.preventDefault();
     const npc = npcAtPointer(ev);
-    if (npc) state.social.pet(npc);
+    if (npc && (!state.playerId || !npc.config || npc.config.id !== state.playerId)) {
+      state.social.pet(npc);
+    }
   });
 
   window.__social = state.social;
@@ -477,6 +653,8 @@ async function init() {
   window.__ai = state.ai;
   window.__logs = state.convLogs;
   window.__relPanel = state.relPanel;
+  window.__player = () => (state.player ? state.player.player() : null);
+  window.__playerChat = state.playerChat;
   window.__profiles = () => state.roster.map((entry) => profileFor(entry));
   window.__npcs = () => state.roster.map((config) => ({ ...config, home: [...config.home] }));
 
@@ -554,6 +732,7 @@ function frame(time) {
 
   if (!state.editing) {
     state.lifestyles.update(dt);
+    if (state.player) state.player.update(dt);
     if (state.social) state.social.update(dt);
   }
   render();

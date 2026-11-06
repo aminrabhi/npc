@@ -48,7 +48,7 @@ function firstOpenCell(village, roster) {
   return [0, 0];
 }
 
-export function createNpcStudio({ canvas, state, village, assets, sheetsFor, onChange }) {
+export function createNpcStudio({ canvas, state, village, assets, sheetsFor, onChange, onPlayerChange = null }) {
   let open = false;
   let selectedId = state.roster.length ? state.roster[0].id : null;
   let placing = false;
@@ -87,6 +87,12 @@ export function createNpcStudio({ canvas, state, village, assets, sheetsFor, onC
           <span id="np-home">home -</span>
           <button type="button" class="ed-btn" id="np-place">Set on map</button>
         </div>
+        <div class="np-section">Playable character</div>
+        <div class="np-row">
+          <button type="button" class="ed-btn" id="np-play">Play as</button>
+          <button type="button" class="ed-btn" id="np-export-character">Export</button>
+        </div>
+        <div class="np-note" id="np-player-note"></div>
         <div class="np-section">Home &amp; bed</div>
         <label class="np-label" for="np-house">House</label>
         <select class="np-input np-select" id="np-house"></select>
@@ -168,6 +174,8 @@ export function createNpcStudio({ canvas, state, village, assets, sheetsFor, onC
   const homeLabel = panel.querySelector('#np-home');
   const status = panel.querySelector('#np-status');
   const placeBtn = panel.querySelector('#np-place');
+  const playBtn = panel.querySelector('#np-play');
+  const playerNote = panel.querySelector('#np-player-note');
   const houseSel = panel.querySelector('#np-house');
   const roomSel = panel.querySelector('#np-roomSel');
   const bedSel = panel.querySelector('#np-bedSel');
@@ -519,6 +527,7 @@ export function createNpcStudio({ canvas, state, village, assets, sheetsFor, onC
     syncProfileFields();
     homeLabel.textContent = entry ? `home ${entry.home[0]}, ${entry.home[1]}` : 'home -';
     markOptions();
+    syncPlayer();
     renderAssign();
     drawPreview(true);
   }
@@ -563,6 +572,7 @@ export function createNpcStudio({ canvas, state, village, assets, sheetsFor, onC
   function commit() {
     onChange();
     renderRoster();
+    syncPlayer();
     homeLabel.textContent = (() => {
       const entry = selected();
       return entry ? `home ${entry.home[0]}, ${entry.home[1]}` : 'home -';
@@ -671,6 +681,7 @@ export function createNpcStudio({ canvas, state, village, assets, sheetsFor, onC
   panel.querySelector('#np-del').addEventListener('click', () => {
     const entry = selected();
     if (!entry) return;
+    if (isPlaying() && onPlayerChange) onPlayerChange(null, entry, { remove: true });
     const index = state.roster.indexOf(entry);
     state.roster.splice(index, 1);
     const next = state.roster[Math.min(index, state.roster.length - 1)];
@@ -678,6 +689,23 @@ export function createNpcStudio({ canvas, state, village, assets, sheetsFor, onC
     onChange();
     renderRoster();
     syncFields();
+  });
+
+  playBtn.addEventListener('click', () => {
+    const entry = selected();
+    if (!entry || !onPlayerChange) return;
+    onPlayerChange(isPlaying() ? null : entry.id, entry);
+    syncPlayer();
+  });
+
+  panel.querySelector('#np-export-character').addEventListener('click', () => {
+    const entry = selected();
+    if (!entry) return;
+    modalTitle.textContent = 'Player character code';
+    codeArea.value = characterCode(entry);
+    modal.hidden = false;
+    codeArea.focus();
+    codeArea.select();
   });
 
   // ------------------------------------------------------------- home tile
@@ -844,7 +872,7 @@ export function createNpcStudio({ canvas, state, village, assets, sheetsFor, onC
   modal.hidden = true;
   modal.innerHTML = `
     <div class="ed-modal-box">
-      <h2>NPC code</h2>
+      <h2 id="np-modal-title">NPC code</h2>
       <p>Copy this and paste it back in chat - these villagers get baked into the project.</p>
       <textarea readonly spellcheck="false"></textarea>
       <div class="ed-modal-actions">
@@ -856,7 +884,36 @@ export function createNpcStudio({ canvas, state, village, assets, sheetsFor, onC
   document.body.appendChild(modal);
 
   const codeArea = modal.querySelector('textarea');
+  const modalTitle = modal.querySelector('#np-modal-title');
   const copyBtn = modal.querySelector('#np-copy-code');
+
+  // A player is still a roster entry; this only changes who owns the keyboard. The
+  // button reads the live state every time because a character can also be stopped
+  // from outside the studio (for example by choosing another one).
+  function isPlaying() {
+    const entry = selected();
+    return !!entry && state.playerId === entry.id;
+  }
+
+  function syncPlayer() {
+    const entry = selected();
+    const playing = isPlaying();
+    if (playBtn) {
+      playBtn.disabled = !entry;
+      playBtn.textContent = playing ? 'Stop' : 'Play as';
+      playBtn.classList.toggle('is-on', playing);
+      playBtn.title = playing
+        ? 'Give this character back to the village'
+        : 'Spawn this character and control them with WASD';
+    }
+    const exportBtn = panel.querySelector('#np-export-character');
+    if (exportBtn) exportBtn.disabled = !entry;
+    if (playerNote) {
+      playerNote.textContent = playing
+        ? 'WASD / arrows to walk · / to chat'
+        : 'Play spawns this character at their home tile.';
+    }
+  }
 
   function rosterJson() {
     const npcs = state.roster.map((entry) => ({
@@ -888,6 +945,7 @@ export function createNpcStudio({ canvas, state, village, assets, sheetsFor, onC
   }
 
   function showExport() {
+    modalTitle.textContent = 'NPC code';
     codeArea.value = rosterJson();
     modal.hidden = false;
     codeArea.focus();
@@ -895,11 +953,37 @@ export function createNpcStudio({ canvas, state, village, assets, sheetsFor, onC
     return codeArea.value;
   }
 
+  // A single entry plus its full profile, ready to paste into data/npcs.json or back
+  // into chat. `player: true` lets a baked entry become the default playable character.
+  function characterCode(entry) {
+    const profile = profileFor(entry);
+    const data = {
+      player: true,
+      id: entry.id,
+      name: entry.name,
+      body: entry.body,
+      hair: entry.hair,
+      hand: entry.hand,
+      heldItem: entry.heldItem || null,
+      skin: entry.skin || null,
+      shirt: entry.shirt || null,
+      hairColor: entry.hairColor || null,
+      home: [entry.home[0], entry.home[1]],
+      backstory: entry.backstory,
+      personality: [...entry.personality],
+      notes: entry.notes,
+      homes: entry.homes ? { room: entry.homes.room, bed: entry.homes.bed } : null,
+      profile,
+    };
+    return `// Paste this character back in chat to hard-code them.\nexport const PLAYER_CHARACTER = ${JSON.stringify(data, null, 2)};\n`;
+  }
+
   panel.querySelector('#np-export').addEventListener('click', showExport);
   modal.querySelector('#np-modal-close').addEventListener('click', () => { modal.hidden = true; });
   modal.addEventListener('click', (ev) => { if (ev.target === modal) modal.hidden = true; });
   panel.querySelector('#np-export-homes').addEventListener('click', () => {
     if (!state.homes) return;
+    modalTitle.textContent = 'Room & bed code';
     codeArea.value = state.homes.exportCode();
     modal.hidden = false;
     codeArea.focus();

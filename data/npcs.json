@@ -211,6 +211,46 @@
         "disciplined"
       ],
       "notes": "Likes to run"
+    },
+    {
+      "player": true,
+      "id": "npc_11",
+      "name": "Amin Rabhi",
+      "body": "base",
+      "hair": "bowlhair",
+      "hand": "tools",
+      "heldItem": null,
+      "skin": "#f3c9a3",
+      "shirt": "#d94f5c",
+      "hairColor": "#000000",
+      "home": [
+        0,
+        0
+      ],
+      "backstory": "",
+      "personality": [],
+      "notes": "",
+      "homes": null,
+      "profile": {
+        "version": 1,
+        "id": "npc_11",
+        "name": "Amin Rabhi",
+        "personality": [],
+        "backstory": "",
+        "notes": "",
+        "interests": [],
+        "likes": [],
+        "dislikes": [],
+        "tendencies": [],
+        "memories": [],
+        "style": "plain",
+        "styleText": "plain and easy, ordinary village talk",
+        "social": {
+          "sociability": 0.5,
+          "newsInterest": 0.25,
+          "cooldownSeconds": 120
+        }
+      }
     }
   ]
 }

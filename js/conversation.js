@@ -164,6 +164,7 @@ export function createConversations({
     abandoned: 0,
     failed: 0,
     messages: 0,
+    playerMessages: 0,
     groqMessages: 0,
     cachedMessages: 0,
     offlineMessages: 0,
@@ -312,8 +313,8 @@ export function createConversations({
     return Date.now() >= until;
   }
 
-  function begin(npcA, npcB) {
-    if (!canTalk(npcA, npcB)) return null;
+  function begin(npcA, npcB, { ignoreCooldown = false } = {}) {
+    if (!ignoreCooldown && !canTalk(npcA, npcB)) return null;
     const a = entryFor(npcA);
     const b = entryFor(npcB);
     if (!a || !b) return null;
@@ -373,6 +374,11 @@ export function createConversations({
       // separate from the persisted lesson book: it makes the current conversation
       // react immediately to a punishment or a reward.
       lessonNotes: new Map(),
+      // A real person can be one of the participants. The manager waits for their
+      // line instead of asking the model to speak for them.
+      humanId: null,
+      awaitingHuman: false,
+      playerStarted: false,
     };
 
     sessions.set(session.id, session);
@@ -404,7 +410,7 @@ export function createConversations({
 
   // A nearby villager joins the chat. Three is the limit: a fourth voice turns a
   // conversation into a crowd and nobody can follow the transcript.
-  function join(session, npc) {
+  function join(session, npc, { ignoreCooldown = false } = {}) {
     if (!session || session.status !== 'active' || !npc || !npc.config) return false;
     if (session.participants.length >= 3) return false;
     const id = npc.config.id;
@@ -413,7 +419,8 @@ export function createConversations({
     if (!entry) return false;
     for (const participant of session.participants) {
       const other = npcForId(session, participant.id);
-      if (!other || !canTalk(npc, other)) return false;
+      if (!other) return false;
+      if (!ignoreCooldown && !canTalk(npc, other)) return false;
     }
     session.participants.push({ id: entry.id, name: entry.name });
     if (!session.npcs) session.npcs = npcsOf(session);
@@ -422,6 +429,60 @@ export function createConversations({
     // A newcomer needs a turn or two to say anything worth hearing.
     session.target = Math.min(12, session.target + 2);
     session.joinedAt = session.clock;
+    return true;
+  }
+
+  // A player-started chat begins with the human's line. The NPC still gets the same
+  // profile, relationship, memory and environment context as an ordinary villager,
+  // so a player conversation is not a separate, dumber dialogue path.
+  function beginPlayer(playerNpc, npcB) {
+    if (!playerNpc || !npcB || playerNpc === npcB) return null;
+    const session = begin(playerNpc, npcB, { ignoreCooldown: true });
+    if (!session) return null;
+    session.humanId = playerNpc.config.id;
+    session.awaitingHuman = true;
+    session.playerStarted = true;
+    session.target = Math.max(session.target, 12);
+    return session;
+  }
+
+  // Joining an existing two-person chat adds the player as the third speaker. The
+  // pair pauses on the player's turn and resumes as soon as a line is submitted.
+  function joinPlayer(sessionId, playerNpc) {
+    const session = sessions.get(sessionId);
+    if (!session || session.status !== 'active' || !playerNpc || !playerNpc.config) return null;
+    if (session.humanId) return session.humanId === playerNpc.config.id ? session : null;
+    if (!join(session, playerNpc, { ignoreCooldown: true })) return null;
+    session.humanId = playerNpc.config.id;
+    session.awaitingHuman = true;
+    session.target = Math.max(session.target, turns(session) + 4);
+    return session;
+  }
+
+  function playerSay(sessionId, text) {
+    const session = sessions.get(sessionId);
+    if (!session || session.status !== 'active') {
+      return { ok: false, reason: 'That conversation has ended.' };
+    }
+    if (!session.humanId) return { ok: false, reason: 'This is not a player conversation.' };
+    if (session.pending) return { ok: false, reason: 'Wait for the reply first.' };
+    if (!session.awaitingHuman) return { ok: false, reason: 'It is not your turn yet.' };
+    const clean = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 180);
+    if (!clean) return { ok: false, reason: 'Type a line first.' };
+
+    addMessage(session, session.humanId, clean, 'player', false);
+    session.awaitingHuman = false;
+    session.target = Math.max(session.target, turns(session) + 4);
+    // Ask for the answer immediately; update() will not have to wait for its next
+    // clock tick before the villager starts writing.
+    requestLine(session);
+    return { ok: true, session: snapshotSession(session) };
+  }
+
+  function leavePlayer(sessionId, reason = 'player_left') {
+    const session = sessions.get(sessionId);
+    if (!session) return false;
+    abandon(session, reason);
     return true;
   }
 
@@ -441,7 +502,8 @@ export function createConversations({
     // the simulation clock is in seconds, so the reading time has to be converted
     session.nextAt = session.clock + displayMs(text) / 1000;
     stats.messages += 1;
-    if (generatedBy === 'groq') stats.groqMessages += 1;
+    if (generatedBy === 'player') stats.playerMessages += 1;
+    else if (generatedBy === 'groq') stats.groqMessages += 1;
     else if (generatedBy === 'cached') stats.cachedMessages += 1;
     else stats.offlineMessages += 1;
 
@@ -500,6 +562,13 @@ export function createConversations({
     const turn = turns(session);
     const speakerNow = speakerAt(session, turn);
     const speakerId = speakerNow ? speakerNow.id : session.participants[0].id;
+    // The player writes their own lines. Never send a request that would put words
+    // in their mouth; the UI will hand the turn back when a line is submitted.
+    if (session.humanId && speakerId === session.humanId) {
+      session.pending = false;
+      session.awaitingHuman = true;
+      return;
+    }
     const mode = turn === 0
       ? 'opening'
       : turn >= session.target - 1 ? 'closing' : 'reply';
@@ -822,7 +891,8 @@ export function createConversations({
       }
       if (session.wait > 0) session.wait = 0;
 
-      if (session.clock > SESSION_LIMIT) {
+      const sessionLimit = session.humanId ? 600 : SESSION_LIMIT;
+      if (session.clock > sessionLimit) {
         finish(session, 'complete', 'session_cap');
         continue;
       }
@@ -840,6 +910,18 @@ export function createConversations({
         }
         continue;
       }
+
+      // A player chat waits for a submitted line. This check comes before the
+      // automatic turn so an empty opening never turns into an AI-written player
+      // message.
+      if (session.humanId) {
+        const next = speakerAt(session, turns(session));
+        if (turns(session) === 0 || (next && next.id === session.humanId)) {
+          session.awaitingHuman = true;
+          continue;
+        }
+      }
+      if (session.awaitingHuman) continue;
 
       if (turns(session) === 0) {
         requestLine(session);
@@ -886,6 +968,9 @@ export function createConversations({
       pending: session.pending,
       followUps: (session.followUps || []).length,
       lastSource: session.lastSource || null,
+      humanId: session.humanId || null,
+      awaitingHuman: !!session.awaitingHuman,
+      playerStarted: !!session.playerStarted,
       categories: (session.categories || []).slice(),
       // how long this chat has been running on the simulation clock, so the panel can
       // show progress and a stalled conversation is visible rather than silent
@@ -897,7 +982,11 @@ export function createConversations({
 
   return {
     begin,
+    beginPlayer,
     join,
+    joinPlayer,
+    playerSay,
+    leavePlayer,
     react,
     canTalk,
     update,

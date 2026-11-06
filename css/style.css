@@ -598,6 +598,7 @@ html, body {
   top: 18px;
   z-index: 22;
   width: 566px;
+  max-width: calc(100vw - 36px);
   max-height: calc(100vh - 36px);
   overflow: auto;
   padding: 10px 12px 12px;
@@ -1029,4 +1030,163 @@ html, body {
    with their tool cursors while they are open. */
 #view {
   cursor: url("assets/ui/cursor.png") 1 1, default;
+}
+
+/* ------------------------------------------------------------- player chat */
+
+/* The slash menu is deliberately a small command bar rather than another side panel:
+   it sits over the bottom of the map, opens on one key and gets out of the way again. */
+#player-chat {
+  position: fixed;
+  left: 50%;
+  bottom: 22px;
+  z-index: 24;
+  width: min(540px, calc(100vw - 24px));
+  transform: translateX(-50%);
+  font-size: 10px;
+  user-select: none;
+}
+
+#player-chat[hidden] { display: none; }
+
+.pc-panel {
+  padding: 8px 10px 9px;
+  background: rgba(23, 20, 42, 0.97);
+  border: 2px solid rgba(255, 233, 168, 0.4);
+  border-radius: 4px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.32);
+}
+
+.pc-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.pc-title {
+  font-family: 'Pixelify Sans', ui-monospace, monospace;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: #ffe9a8;
+}
+
+.pc-keys {
+  margin-left: auto;
+  font-size: 8px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(244, 239, 226, 0.4);
+}
+
+.pc-log {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 86px;
+  overflow-y: auto;
+  margin-bottom: 6px;
+  padding: 4px 6px;
+  background: rgba(0, 0, 0, 0.26);
+  border-left: 2px solid rgba(255, 233, 168, 0.3);
+}
+
+.pc-log[hidden] { display: none; }
+
+.pc-line { font-size: 10px; line-height: 1.4; color: rgba(244, 239, 226, 0.82); }
+.pc-line.is-player { color: #fff4cf; }
+.pc-speaker { color: #9fe0ff; margin-right: 5px; }
+.pc-line.is-player .pc-speaker { color: #ffe9a8; }
+.pc-text { white-space: pre-wrap; }
+
+.pc-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 136px;
+  overflow-y: auto;
+  margin-bottom: 6px;
+}
+
+.pc-choices[hidden] { display: none; }
+
+.pc-choice {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 7px;
+  font-family: inherit;
+  font-size: 10px;
+  text-align: left;
+  color: rgba(244, 239, 226, 0.86);
+  background: rgba(244, 239, 226, 0.05);
+  border: 1px solid rgba(244, 239, 226, 0.13);
+  border-left: 2px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.pc-choice:hover,
+.pc-choice.is-on {
+  color: #fff4cf;
+  background: rgba(255, 233, 168, 0.13);
+  border-color: rgba(255, 233, 168, 0.45);
+  border-left-color: #ffe9a8;
+}
+
+.pc-choice-label { flex: 1; }
+.pc-choice-sub {
+  font-size: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: rgba(244, 239, 226, 0.36);
+}
+
+.pc-empty {
+  padding: 7px;
+  font-size: 10px;
+  line-height: 1.45;
+  color: rgba(244, 239, 226, 0.5);
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px dashed rgba(244, 239, 226, 0.16);
+  border-radius: 3px;
+}
+
+.pc-say { display: flex; gap: 5px; }
+.pc-say[hidden] { display: none; }
+
+.pc-input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  font-family: inherit;
+  font-size: 11px;
+  color: #f4efe2;
+  background: rgba(0, 0, 0, 0.38);
+  border: 1px solid rgba(244, 239, 226, 0.2);
+  border-radius: 3px;
+}
+
+.pc-input:focus {
+  outline: none;
+  border-color: rgba(255, 233, 168, 0.7);
+}
+
+.pc-input:disabled { opacity: 0.55; }
+
+.pc-status {
+  min-height: 13px;
+  margin-top: 5px;
+  font-size: 9px;
+  line-height: 1.35;
+  color: rgba(244, 239, 226, 0.45);
+}
+
+/* The existing studio note class was only used by markup; make it readable in the
+   player block too. */
+.np-note {
+  font-size: 9px;
+  line-height: 1.4;
+  color: rgba(255, 214, 102, 0.72);
 }

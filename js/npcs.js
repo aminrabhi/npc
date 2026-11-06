@@ -110,6 +110,10 @@ export function normaliseNpc(raw, index) {
     skin: raw.skin || null,
     shirt: raw.shirt || null,
     hairColor: raw.hairColor || null,
+    // A baked character can opt in as the default playable character. The local
+    // studio can still override this with its own saved player.
+    player: raw.player === true,
+    profile: raw.profile && typeof raw.profile === 'object' ? raw.profile : null,
     home: [Number(home[0]) | 0, Number(home[1]) | 0],
     backstory: String(raw.backstory || ''),
     personality,

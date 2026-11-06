@@ -31,6 +31,7 @@ export class NPC {
     this.rng = rng;
     this.regionId = regionId;
     this.config = config || null;
+    this.isPlayer = false;
 
     this.sheets = sheets;
     this.name = name || '';
@@ -554,6 +555,17 @@ export class NPC {
     const sx = frame * CELL_W;
     ctx.imageSmoothingEnabled = false;
 
+    // A small warm shadow marks the one body the keyboard is driving. It stays part
+    // of the world, so it scales with the map instead of becoming a screen overlay.
+    if (this.isPlayer) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(255, 233, 168, 0.22)';
+      ctx.beginPath();
+      ctx.ellipse(px, py + 1, 8, 3.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
     ctx.save();
     if (this.facing === -1) {
       ctx.translate(px, 0);
@@ -590,7 +602,7 @@ export class NPC {
     ctx.lineWidth = 2.5;
     ctx.strokeStyle = 'rgba(23, 20, 42, 0.88)';
     ctx.strokeText(this.name, px, py);
-    ctx.fillStyle = '#fff4cf';
+    ctx.fillStyle = this.isPlayer ? '#ffe9a8' : '#fff4cf';
     ctx.fillText(this.name, px, py);
     ctx.restore();
   }
