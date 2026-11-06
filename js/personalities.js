@@ -91,12 +91,12 @@ const HAND_WRITTEN = {
     social: { sociability: 0.8, newsInterest: 0.2 },
   },
   npc_05: {
-    interests: ['the city', 'basketball', 'street food'],
+    interests: ['basketball', 'street food', 'sneakers'],
     likes: ['winning', 'being respected', 'his old crew'],
     dislikes: ['being treated like a kid', 'quiet fields', 'being told to calm down'],
     tendencies: ['boasts before he listens', 'turns every chat into a competition'],
     memories: [
-      'Grew up in the middle of the city and misses the noise.',
+      'Grew up somewhere loud and crowded and misses the noise.',
       'Has not worked out what to do with himself out here.',
     ],
     style: 'blunt',

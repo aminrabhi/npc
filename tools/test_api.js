@@ -151,9 +151,10 @@ try {
   check('prompt tells the model not to recite its backstory', /background, not a script/i.test(prompt[0].content));
   check('prompt asks for the message only, with no count', /no character or word count/i.test(prompt[0].content));
   check('prompt asks for plain casual words', /plain everyday words/i.test(prompt[0].content));
-  check('prompt lets villagers talk about village life', /ordinary village life/i.test(prompt[0].content));
-  check('prompt asks for specific local detail', /Be specific/i.test(prompt[0].content));
-  check('prompt keeps the city from taking over', /story about the city/i.test(prompt[0].content));
+  check('prompt keeps talk personal', /Talk about your own life/i.test(prompt[0].content));
+  check('prompt asks for specific personal detail', /personal and specific/i.test(prompt[0].content));
+  check('prompt does not steer toward village or city life', !/\b(village|city)\b/i.test(prompt[0].content), prompt[0].content);
+  check('prompt redirects away from where they live', /where you live/i.test(prompt[0].content));
 
   console.log('\nchat');
   const conversation = {

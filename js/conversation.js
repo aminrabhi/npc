@@ -18,10 +18,10 @@ import { createDialogueCache } from './dialogue_cache.js';
 const MIN_TURNS = 2;
 const MAX_TURNS = 8;
 
-// What villagers actually talk about. Village life is part of the mix, but as one
-// specific local subject rather than a generic "the village" remark every time;
-// wider-world subjects keep the village from sounding like a closed loop. One of
-// these is drawn per conversation and offered to the model as a subject.
+// What villagers actually talk about. Place talk is deliberately left out: the
+// village and any city stay background, while conversations stay with people,
+// memories, work and small personal things. One is drawn per conversation and
+// offered to the model as a subject.
 export const TOPICS = [
   'the last film you watched and why it stuck with you',
   'a song from years ago you cannot get out of your head',
@@ -40,7 +40,7 @@ export const TOPICS = [
   'the worst haircut you ever had',
   'something you heard on the radio that you cannot explain',
   'a person you miss and have never said so out loud',
-  'the quietest hour of the village day',
+  'a recipe you have never managed to get right',
   'a lie you told that got out of hand',
   'a door that only seems to open at night',
   'the word home and what it means to you',
@@ -49,16 +49,17 @@ export const TOPICS = [
   'a letter you never sent',
   'whether people can really change',
   'the best thing you have ever eaten',
-  'a town you passed through once and never forgot',
-  'the path by the river and where it goes',
-  'a neighbour who always knows what is going on',
-  'the state of the roof after the last storm',
-  'something growing in the garden that should not be',
-  'a sound you only hear around here at night',
-  'the way the square fills up when the weather turns',
+  'a journey you would take again if you could',
+  'a recipe you have never managed to get right',
+  'the last time you laughed until you cried',
+  'a skill you wish you had learned',
+  'something you changed your mind about',
+  'what you do when you cannot sleep',
+  'a promise you kept even when it was hard',
+  'the best advice anyone ever gave you',
   'what you would say to someone who is gone',
   'a habit you cannot break',
-  'the old bench nobody remembers putting there',
+  'a small risk that turned out to be worth it',
 ];
 const APPROACH_LIMIT = 12; // seconds the pair may take to reach each other
 const SESSION_LIMIT = 95; // hard cap, so a stalled request cannot freeze a villager

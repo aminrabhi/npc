@@ -11,7 +11,7 @@
 import { createOfflineDialogue, fitsBubble, bandOf, CATEGORIES } from '../js/offline_dialogue.js';
 import { createDialogueCache } from '../js/dialogue_cache.js';
 import { createAiClient } from '../js/ai.js';
-import { createConversations } from '../js/conversation.js';
+import { createConversations, TOPICS } from '../js/conversation.js';
 
 let checks = 0;
 let failures = 0;
@@ -320,6 +320,9 @@ if (session) {
   check('the status reports fallback with counts', conversations.dialogueStatus().fallback === true && conversations.dialogueStatus().counts.offline >= 1, JSON.stringify(conversations.dialogueStatus().counts));
   check('the stats count offline lines', conversations.stats().offlineMessages >= 2, JSON.stringify(conversations.stats()));
 }
+
+console.log('\ntopic pool');
+check('conversation topics avoid village and city life', TOPICS.every((topic) => !/\b(village|city|town)\b/i.test(topic)), TOPICS.filter((topic) => /\b(village|city|town)\b/i.test(topic)).join(' | '));
 
 console.log('\ngroup conversation');
 const npcC = { config: { id: 'npc_c' }, sim: { state: 'talking', dialogue: null, partner: npcA }, x: 8, y: 0, room: null };
