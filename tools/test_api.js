@@ -11,6 +11,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sanitiseLine, sanitiseMessages } from '../server/groq.js';
 import { buildMessages } from '../server/prompts.js';
+import { talksAboutVillage, stripVillageTalk } from '../server/village_filter.js';
+import { generateLine } from '../api/chat.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const MOCK_PORT = 4210;
@@ -131,12 +133,42 @@ try {
   check('each split message still fits a bubble', split.every((part) => part.length <= 110), JSON.stringify(split));
   check('a split keeps the finished sentence at the end', /[.!?]$/.test(split[split.length - 1]), JSON.stringify(split[split.length - 1]));
 
+  console.log('\nvillage talk');
+  check('village talk is detected', talksAboutVillage('The whole village was at the square.'));
+  check('an ordinary line passes', !talksAboutVillage('I could eat a whole pie.'));
+  check('village life is caught by more than one word', talksAboutVillage('I heard it from the neighbours.') && talksAboutVillage('The harvest is late this year.'));
+  check('a good sentence survives the bad one', stripVillageTalk('I could eat a whole pie. The village was quiet.') === 'I could eat a whole pie.', JSON.stringify(stripVillageTalk('I could eat a whole pie. The village was quiet.')));
+
+  const fake = (text) => ({ text, extra: [], model: 'allam-2-7b' });
+  let attempts = 0;
+  const retried = await generateLine({
+    messages: [],
+    complete: async () => {
+      attempts += 1;
+      return attempts === 1 ? fake('The village was busy today.') : fake('I could eat a whole pie.');
+    },
+  });
+  check('a village line is regenerated', attempts === 2 && retried.text === 'I could eat a whole pie.', `${attempts} ${retried.text}`);
+  check('the retry is recorded on the reply', retried.retried === true);
+
+  let stubborn = 0;
+  let refused = null;
+  try {
+    await generateLine({ messages: [], complete: async () => { stubborn += 1; return fake('The village square was busy.'); } });
+  } catch (error) {
+    refused = error;
+  }
+  check('village talk that survives the retry is refused', !!refused && refused.code === 'groq_village_talk', refused && refused.code);
+  check('the retry is bounded to one extra call', stubborn === 2, `${stubborn}`);
+
   const prompt = buildMessages({ speaker: { name: 'Mama Green' }, listener: { name: 'Timmy' }, mode: 'opening' });
   check('prompt asks for one or two short sentences', /one or two short sentences/i.test(prompt[0].content));
   check('prompt asks for a line break on a second thought', /new line/i.test(prompt[0].content));
   check('prompt tells the model not to recite its backstory', /background, not a script/i.test(prompt[0].content));
   check('prompt asks for the message only, with no count', /no character or word count/i.test(prompt[0].content));
   check('prompt asks for plain casual words', /plain everyday words/i.test(prompt[0].content));
+  check('prompt bans village talk by name', /Never talk about the village or village life/i.test(prompt[0].content));
+  check('prompt asks the model to self-check for village words', /check your line for those words/i.test(prompt[0].content));
 
   console.log('\nchat');
   const conversation = {
@@ -164,6 +196,7 @@ try {
   check('chat returns a line', chatBody.ok === true && typeof chatBody.message.text === 'string' && chatBody.message.text.length > 0);
   check('chat reports the configured model', chatBody.message && chatBody.message.model === 'allam-2-7b');
   check('line contains no technical leakage', !/\b(AI|Groq|prompt|API)\b/.test(chatBody.message ? chatBody.message.text : ''));
+  check('a normal line is not marked as cleaned', chatBody.message.cleaned === false && chatBody.message.retried === false);
 
   const closing = await (await post(`${base}/api/chat`, { ...conversation, conversationId: 'c_test_2', mode: 'closing', messageCount: 6 })).json();
   check('closing mode produces a line', closing.ok === true && closing.message.text.length > 0);
@@ -185,6 +218,34 @@ try {
   const bareChatBody = await bareChat.json();
   check('unconfigured chat explains itself', bareChat.status === 503 && bareChatBody.error.code === 'groq_not_configured', `status ${bareChat.status}`);
   check('unconfigured error names GROQ_API_KEY', /GROQ_API_KEY/.test(bareChatBody.error.message + JSON.stringify(bareChatBody.error)));
+
+  console.log('\nvillage talk over HTTP');
+  const driftMock = 4214;
+  const driftApi = 4215;
+  children.push(start('tools/mock_backends.js', [String(driftMock)], { MOCK_GROQ: 'village_once' }));
+  await waitFor(`http://127.0.0.1:${driftMock}/_stats`);
+  children.push(start('tools/api_server.js', [String(driftApi)], {
+    ...configuredEnv,
+    GROQ_BASE_URL: `http://127.0.0.1:${driftMock}/openai/v1`,
+  }));
+  await waitFor(`http://127.0.0.1:${driftApi}/api/status`);
+  const driftChat = await post(`http://127.0.0.1:${driftApi}/api/chat`, { ...conversation, conversationId: 'c_village_1' });
+  const driftBody = await driftChat.json();
+  check('a village line is regenerated over HTTP', driftChat.status === 200 && !!driftBody.message && !talksAboutVillage(driftBody.message.text), JSON.stringify(driftBody.message || driftBody.error));
+  check('the regenerated line is flagged', driftBody.message && driftBody.message.retried === true);
+
+  const stuckMock = 4216;
+  const stuckApi = 4217;
+  children.push(start('tools/mock_backends.js', [String(stuckMock)], { MOCK_GROQ: 'village' }));
+  await waitFor(`http://127.0.0.1:${stuckMock}/_stats`);
+  children.push(start('tools/api_server.js', [String(stuckApi)], {
+    ...configuredEnv,
+    GROQ_BASE_URL: `http://127.0.0.1:${stuckMock}/openai/v1`,
+  }));
+  await waitFor(`http://127.0.0.1:${stuckApi}/api/status`);
+  const stuckChat = await post(`http://127.0.0.1:${stuckApi}/api/chat`, { ...conversation, conversationId: 'c_village_2' });
+  const stuckBody = await stuckChat.json();
+  check('a model stuck on village talk is reported, not spoken', stuckChat.status === 502 && stuckBody.error && stuckBody.error.code === 'groq_village_talk', JSON.stringify(stuckBody.error));
 
   console.log('\nmodel misconfiguration');
   const wrongModelChild = start('tools/api_server.js', ['4213'], { ...configuredEnv, GROQ_MODEL: 'not-a-model' });

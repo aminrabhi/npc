@@ -40,7 +40,7 @@ const OPENING = [
 const REPLY = [
   'That is a fair point, I suppose.',
   'I never thought of it that way.',
-  'Aye, the village has been quiet lately.',
+  'I would not count on that, mind.',
   'You say that, but I have my doubts.',
   'Well, that is one way to look at it.',
 ];
@@ -52,7 +52,7 @@ const CLOSING = [
 ];
 
 function lineFor(prompt) {
-  const speaker = (prompt.match(/You are ([^,\n]+), a villager/) || [])[1] || 'Villager';
+  const speaker = (prompt.match(/You are ([^.\n]+)\./) || [])[1] || 'Villager';
   const bank = /Say the first thing/.test(prompt) ? OPENING : /last thing you will say/.test(prompt) ? CLOSING : REPLY;
   const line = bank[stats.chat % bank.length];
   stats.chat += 1;
@@ -150,6 +150,21 @@ const server = http.createServer(async (req, res) => {
       json(res, 404, { error: { message: `The model ${body && body.model} does not exist`, code: 'model_not_found' } });
       return;
     }
+    // Two modes for the village-talk guard: a model that drifts once and then obeys,
+    // and one that will not talk about anything else.
+    const driftOnce = process.env.MOCK_GROQ === 'village_once' && stats.chat === 0;
+    if (process.env.MOCK_GROQ === 'village' || driftOnce) {
+      stats.chat += 1;
+      json(res, 200, {
+        id: `chatcmpl_${stats.chat}`,
+        object: 'chat.completion',
+        model: 'allam-2-7b',
+        choices: [{ index: 0, message: { role: 'assistant', content: 'The whole village was at the square today. The neighbours were out as well.' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 320, completion_tokens: 12, total_tokens: 332 },
+      });
+      return;
+    }
+
     const prompt = (body.messages || []).map((message) => message.content).join('\n');
     json(res, 200, {
       id: `chatcmpl_${stats.chat}`,
