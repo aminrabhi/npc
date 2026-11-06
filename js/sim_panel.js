@@ -19,7 +19,7 @@ const PRESETS = [
 
 const pad = (n) => String(n).padStart(2, '0');
 
-export function createSimPanel({ clock, weather, lifestyle, getNpcs }) {
+export function createSimPanel({ clock, weather, lifestyle, getNpcs, ai = null, conversations = null }) {
   const dock = ensureDock();
   const button = document.createElement('button');
   button.type = 'button';
@@ -68,6 +68,17 @@ export function createSimPanel({ clock, weather, lifestyle, getNpcs }) {
       <div class="sim-head"><span class="sim-title">Villagers</span><span class="sim-note" id="sim-states-note"></span></div>
       <div class="sim-villagers" id="sim-villagers"></div>
     </div>
+
+    <div class="sim-group">
+      <div class="sim-head">
+        <span class="sim-title">Dialogue</span>
+        <span class="sim-mode" id="sim-dialogue-mode">--</span>
+      </div>
+      <div class="sim-note" id="sim-dialogue-note"></div>
+      <div class="sim-row">
+        <button type="button" class="ed-btn" id="sim-dialogue-retry">Try Groq now</button>
+      </div>
+    </div>
   `;
   dock.panels.appendChild(section);
 
@@ -87,6 +98,9 @@ export function createSimPanel({ clock, weather, lifestyle, getNpcs }) {
 
   const statesNote = section.querySelector('#sim-states-note');
   const villagerList = section.querySelector('#sim-villagers');
+  const dialogueModeEl = section.querySelector('#sim-dialogue-mode');
+  const dialogueNote = section.querySelector('#sim-dialogue-note');
+  const dialogueRetry = section.querySelector('#sim-dialogue-retry');
 
   for (const entry of CONDITIONS) {
     const option = document.createElement('option');
@@ -191,6 +205,7 @@ export function createSimPanel({ clock, weather, lifestyle, getNpcs }) {
       syncTime();
       syncWeather();
       renderVillagers();
+      syncDialogue();
     }
   });
 
@@ -209,11 +224,62 @@ export function createSimPanel({ clock, weather, lifestyle, getNpcs }) {
       : '';
   }
 
+  // The dialogue mode is shown, never inferred: the reader can always tell whether a
+  // line came from Groq, from the cache of earlier model lines, or from the procedural
+  // engine, and whether the village is currently in fallback.
+  const MODE_LABEL = {
+    groq: 'GROQ AI',
+    cached: 'CACHED AI',
+    offline: 'OFFLINE PROCEDURAL',
+  };
+
+  function syncDialogue() {
+    if (!conversations || !conversations.dialogueStatus) {
+      dialogueModeEl.textContent = 'n/a';
+      dialogueNote.textContent = 'No conversation manager.';
+      return;
+    }
+    const status = conversations.dialogueStatus();
+    const mode = status.mode || 'offline';
+    dialogueModeEl.textContent = MODE_LABEL[mode] || mode.toUpperCase();
+    dialogueModeEl.className = `sim-mode dlg-${mode}`;
+
+    const groq = status.groq || {};
+    const bits = [];
+    if (groq.available) bits.push('Groq available');
+    else if (groq.coolingDown) bits.push(`Groq cooling down ${groq.cooldownSeconds}s`);
+    else if (groq.configured) bits.push('Groq unavailable');
+    else bits.push('Groq not configured');
+    if (status.fallback) bits.push('fallback on');
+    const counts = status.counts || {};
+    bits.push(`${counts.groq || 0} model · ${counts.cached || 0} cached · ${counts.offline || 0} offline`);
+    bits.push(`cache ${status.cache ? status.cache.size : 0}`);
+    if (groq.lastFailureCode) bits.push(`last error ${groq.lastFailureCode}`);
+    dialogueNote.textContent = bits.join(' · ');
+
+    dialogueRetry.disabled = !ai || !ai.recover;
+    dialogueRetry.title = ai && ai.recover
+      ? 'Clear the cooldown and ask the server whether Groq is back'
+      : 'No model client';
+  }
+
+  dialogueRetry.addEventListener('click', () => {
+    if (!ai || !ai.recover) return;
+    dialogueRetry.disabled = true;
+    dialogueRetry.textContent = 'Checking…';
+    ai.recover().catch(() => null).then(() => {
+      dialogueRetry.disabled = false;
+      dialogueRetry.textContent = 'Try Groq now';
+      syncDialogue();
+    });
+  });
+
   const timer = setInterval(() => {
     if (section.hidden) return;
     syncTime();
     syncWeather();
     renderVillagers();
+    syncDialogue();
   }, 800);
 
   return {
@@ -223,6 +289,7 @@ export function createSimPanel({ clock, weather, lifestyle, getNpcs }) {
       syncTime();
       syncWeather();
       renderVillagers();
+      syncDialogue();
     },
     stop: () => clearInterval(timer),
   };

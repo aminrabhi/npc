@@ -21,12 +21,31 @@ export function createAiClient({
     requests: 0,
     ok: 0,
     failed: 0,
+    skipped: 0,
     offline: 0,
     totalMs: 0,
     lastMs: null,
     lastError: null,
   };
   const errors = [];
+  // Groq is an enhancement, never a dependency. When a call fails the model is left
+  // alone until a cooldown expires - ten villagers must not hammer a rate-limited
+  // API - and the village keeps talking on cached and procedural dialogue in the
+  // meantime. When the cooldown ends, the next line tries the model again.
+  const gate = {
+    coolingUntil: 0,
+    failures: 0,
+    lastFailureAt: null,
+    lastFailureCode: null,
+    lastRetryAfter: null,
+    lastSuccessAt: null,
+  };
+  const RATE_CODES = new Set([
+    'groq_rate_limited', 'server_rate_limited', 'client_rate_limited', 'http_429',
+    'rate_limited', 'rate_limit_exceeded', 'rate_limit_error',
+  ]);
+  // The model answered, the answer was unusable: worth a short pause, not a long one.
+  const CONTENT_CODES = new Set(['groq_village_talk', 'groq_empty_reply']);
   const status = {
     checked: false,
     configured: false,
@@ -52,6 +71,74 @@ export function createAiClient({
     return entry;
   }
 
+  function noteFailure(error, httpStatus = 0) {
+    const code = error && error.code ? error.code : 'unknown';
+    gate.failures += 1;
+    gate.lastFailureAt = Date.now();
+    gate.lastFailureCode = code;
+
+    if (CONTENT_CODES.has(code)) {
+      gate.coolingUntil = Date.now() + 15_000;
+      return;
+    }
+
+    const retryAfter = Number(error && error.retryAfter) || null;
+    gate.lastRetryAfter = retryAfter;
+    const step = Math.min(gate.failures - 1, 3);
+    let ms;
+    // the route maps provider errors to its own codes, but a raw provider code is
+    // still a rate limit: treat any "rate limit" wording as one
+    if (RATE_CODES.has(code) || /rate.?limit/i.test(code) || httpStatus === 429) {
+      // honour the server's own retry-after first, then back off further if it keeps
+      // happening; never more than ten minutes
+      ms = Math.max((retryAfter || 45) * 1000, 45_000) * Math.min(4, 1 + step * 0.5);
+      ms = Math.min(ms, 10 * 60_000);
+    } else if (code === 'groq_auth_failed' || code === 'groq_model_unavailable' || code === 'groq_not_configured') {
+      // a wrong key or model is not going to fix itself in the next minute
+      ms = 5 * 60_000;
+    } else {
+      ms = Math.min(5 * 60_000, 30_000 * Math.min(8, 1 + step * 2));
+    }
+    gate.coolingUntil = Date.now() + ms;
+  }
+
+  function noteSuccess() {
+    gate.failures = 0;
+    gate.coolingUntil = 0;
+    gate.lastFailureCode = null;
+    gate.lastSuccessAt = Date.now();
+  }
+
+  function canGenerate() {
+    if (!status.configured) return false;
+    return Date.now() >= gate.coolingUntil;
+  }
+
+  function availability() {
+    const remaining = Math.max(0, Math.ceil((gate.coolingUntil - Date.now()) / 1000));
+    return {
+      configured: !!status.configured,
+      available: canGenerate(),
+      fallback: !canGenerate(),
+      coolingDown: remaining > 0,
+      cooldownSeconds: remaining,
+      retryAt: gate.coolingUntil ? new Date(gate.coolingUntil).toISOString() : null,
+      failures: gate.failures,
+      lastFailureCode: gate.lastFailureCode,
+      lastFailureAt: gate.lastFailureAt ? new Date(gate.lastFailureAt).toISOString() : null,
+      lastSuccessAt: gate.lastSuccessAt ? new Date(gate.lastSuccessAt).toISOString() : null,
+      model: status.model,
+    };
+  }
+
+  // Drop the cooldown and ask the status route again: used by the debug panel's
+  // "Try Groq now" button, and by anything that knows the network just came back.
+  async function recover() {
+    gate.coolingUntil = 0;
+    gate.failures = 0;
+    return probe();
+  }
+
   async function probe() {
     try {
       const res = await fetch(`${statusUrl}?t=${Date.now()}`, { cache: 'no-store' });
@@ -64,8 +151,11 @@ export function createAiClient({
         status.backend = 'unavailable';
         return status;
       }
+      const wasConfigured = status.configured;
       status.configured = !!(body.groq && body.groq.configured);
       status.model = body.groq ? body.groq.model : null;
+      // A key appearing, or a deployment waking up, is a reason to try again now.
+      if (status.configured && !wasConfigured) noteSuccess();
       status.backend = status.configured ? 'groq' : 'offline';
       status.supabase = !!(body.supabase && body.supabase.configured);
       status.news = !!(body.news && body.news.cachedItems !== undefined);
@@ -88,6 +178,17 @@ export function createAiClient({
     if (!status.configured) {
       stats.offline += 1;
       return { ok: false, error: { code: 'offline', message: status.error || 'Groq is not configured.' } };
+    }
+    // Cooling down after a failure: do not touch the API at all. The caller falls
+    // back to cached or procedural dialogue, which is not an error.
+    if (!canGenerate()) {
+      stats.skipped += 1;
+      const seconds = Math.max(1, Math.ceil((gate.coolingUntil - Date.now()) / 1000));
+      return {
+        ok: false,
+        skipped: true,
+        error: { code: 'groq_cooldown', message: `Groq is cooling down for ${seconds}s.` },
+      };
     }
 
     const controller = new AbortController();
@@ -115,10 +216,12 @@ export function createAiClient({
         const error = body && body.error ? body.error : { code: `http_${res.status}`, message: `Request failed (${res.status}).` };
         stats.failed += 1;
         noteError(error);
+        noteFailure(error, res.status);
         return { ok: false, error, status: res.status };
       }
 
       stats.ok += 1;
+      noteSuccess();
       return {
         ok: true,
         text: body.message.text,
@@ -139,6 +242,7 @@ export function createAiClient({
         ? 'The model did not answer in time.'
         : 'Could not reach the village server.';
       noteError({ code, message });
+      noteFailure({ code, message }, 0);
       return { ok: false, error: { code, message } };
     } finally {
       clearTimeout(timer);
@@ -148,8 +252,11 @@ export function createAiClient({
 
   return {
     probe,
+    recover,
     generate,
     noteError,
+    canGenerate,
+    availability,
     status: () => ({ ...status }),
     stats: () => ({ ...stats }),
     errors: () => errors.slice(),

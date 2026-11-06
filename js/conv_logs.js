@@ -155,6 +155,7 @@ export function createConvLogs({
       live ? '' : durationLabel(session.startedAt, session.endedAt),
       session.savedAt ? 'saved' : (!live && session.status !== 'active' ? 'local only' : ''),
       last && last.generatedBy === 'offline' ? 'offline line' : '',
+      last && last.generatedBy === 'cached' ? 'cached line' : '',
     ].filter(Boolean);
     meta.textContent = bits.join(' · ');
     row.appendChild(head);
@@ -268,7 +269,11 @@ export function createConvLogs({
   function transcriptBlock(messages) {
     if (!messages.length) return '<div class="cl-empty">No messages.</div>';
     const rows = messages.map((message) => {
-      const badges = [message.generatedBy === 'offline' ? '<span class="cl-tag cl-offline">offline</span>' : '<span class="cl-tag cl-groq">model</span>'];
+      const badges = [message.generatedBy === 'offline'
+        ? '<span class="cl-tag cl-offline">offline</span>'
+        : message.generatedBy === 'cached'
+          ? '<span class="cl-tag cl-cached">cached</span>'
+          : '<span class="cl-tag cl-groq">model</span>'];
       if (message.closing) badges.push('<span class="cl-tag">closing</span>');
       return `<div class="cl-msg">
         <div class="cl-msg-head"><span class="cl-speaker">${message.speakerName}</span>
@@ -364,6 +369,10 @@ export function createConvLogs({
     const bits = [];
     if (aiStatus) {
       bits.push(aiStatus.configured ? `model ${aiStatus.model}` : 'model offline (no server key)');
+    }
+    if (conversations && conversations.dialogueStatus) {
+      const dialogue = conversations.dialogueStatus();
+      bits.push(`dialogue ${dialogue.mode}${dialogue.fallback ? ' (fallback)' : ''}`);
     }
     // both queues report the number of successful saves, and how many rows are
     // still waiting to go out

@@ -10,7 +10,8 @@
 // message limit as something it can change.
 
 import { contextFor, profileFor } from './personalities.js';
-import { offlineLine } from './ai.js';
+import { createOfflineDialogue } from './offline_dialogue.js';
+import { createDialogueCache } from './dialogue_cache.js';
 
 // A chat is never padded to a length. Two villagers with nothing new to say part ways
 // after a couple of turns; one with a real thread to pull can run to eight.
@@ -134,6 +135,13 @@ export function createConversations({
   rng = Math.random,
   onHandBack = null,
   onEnd = null,
+  // Optional overrides, mostly for the tests: the engine and the cache are created
+  // here when the village does not hand its own in.
+  offline = null,
+  cache = null,
+  // The clock and the weather, read fresh for every line. The simulation owns both;
+  // this module only borrows them for what a villager would notice.
+  environment = null,
 } = {}) {
   const sessions = new Map();
   const recent = [];
@@ -146,19 +154,85 @@ export function createConversations({
     failed: 0,
     messages: 0,
     groqMessages: 0,
+    cachedMessages: 0,
     offlineMessages: 0,
     lastError: null,
   };
   let counter = 0;
   const recentTopics = [];
 
+  // Where a line came from, in order of preference: the model, a line the model wrote
+  // before for a comparable moment, then the procedural engine. The last one cannot
+  // fail, so a conversation never depends on Groq being up.
+  const dialogue = offline || createOfflineDialogue({ rng });
+  const dialogueCache = cache || createDialogueCache();
+  const sources = { groq: 0, cached: 0, offline: 0 };
+
+  function environmentNow() {
+    try {
+      const env = environment ? environment() : {};
+      return {
+        timeOfDay: (env && env.timeOfDay) || 'day',
+        weather: (env && env.weather) || null,
+      };
+    } catch {
+      return { timeOfDay: 'day', weather: null };
+    }
+  }
+
+  function activityOf(npc) {
+    if (!npc || !npc.sim) return '';
+    if (npc.room) return 'inside';
+    return npc.sim.state || '';
+  }
+
+  // What this speaker remembers about that one, shared moments first. A villager with
+  // no stored memories still has their own history to draw on.
+  function memoryContext(speakerEntry, listenerEntry) {
+    const recalled = memories ? memories.recall(speakerEntry.id, listenerEntry.id, { limit: 4 }) : [];
+    const list = recalled.map((memory) => ({
+      description: memory.description,
+      aboutNpcId: memory.aboutNpcId || null,
+    }));
+    if (!list.length) {
+      for (const line of profileFor(speakerEntry).memories || []) {
+        list.push({ description: line, aboutNpcId: null });
+      }
+    }
+    return list;
+  }
+
+  function currentMode() {
+    const available = ai && ai.availability ? ai.availability() : { available: !!(ai && ai.status && ai.status().configured) };
+    if (available.available) return 'groq';
+    if (dialogueCache.size() > 0) return 'cached';
+    return 'offline';
+  }
+
+  function dialogueStatus() {
+    const availability = ai && ai.availability ? ai.availability() : { configured: false, available: false, fallback: true };
+    const mode = currentMode();
+    return {
+      mode,
+      fallback: mode !== 'groq',
+      groq: availability,
+      counts: { ...sources },
+      cache: dialogueCache.status(),
+      offline: dialogue.status(),
+      lastError: stats.lastError,
+    };
+  }
+
   // Never the same subject twice in a row, so a pair that meets often still has
   // something new to bring up.
   function pickTopic() {
-    const pool = TOPICS.filter((candidate) => !recentTopics.includes(candidate));
+    const pool = TOPICS.filter((candidate) => !recentTopics.includes(candidate) && dialogue.topicReady(candidate));
     const topic = pool[Math.floor(rng() * pool.length)] || TOPICS[0];
     recentTopics.push(topic);
     if (recentTopics.length > 8) recentTopics.shift();
+    // The engine keeps its own ninety-minute topic cooldown, which outlives the
+    // eight-topic window, so a subject does not come back the moment it falls out.
+    dialogue.noteTopic(topic);
     return topic;
   }
 
@@ -258,6 +332,8 @@ export function createConversations({
       outcome: null,
       closeReason: null,
       followUps: [],
+      lastSource: null,
+      categories: [],
     };
 
     sessions.set(session.id, session);
@@ -286,6 +362,7 @@ export function createConversations({
     session.nextAt = session.clock + displayMs(text) / 1000;
     stats.messages += 1;
     if (generatedBy === 'groq') stats.groqMessages += 1;
+    else if (generatedBy === 'cached') stats.cachedMessages += 1;
     else stats.offlineMessages += 1;
 
     const npc = speakerId === session.participants[0].id ? session.npcA : session.npcB;
@@ -353,79 +430,142 @@ export function createConversations({
     session.pendingSince = session.clock;
 
     const speakerEntry = isA ? entryFor(session.npcA) : entryFor(session.npcB);
+    const listenerEntry = isA ? entryFor(session.npcB) : entryFor(session.npcA);
     const profile = profileFor(speakerEntry || {});
+    const otherProfile = profileFor(listenerEntry || {});
+    const env = environmentNow();
 
-    // One retry only when the model repeats the speaker's own previous line: that is
-    // the failure mode a small model actually has, and it is not worth a third call.
-    let result = await ai.generate(payload);
-    if (session.status !== 'active') return;
-    const ownLast = [...session.messages].reverse().find((message) => message.speakerId === speakerId);
-    if (result.ok && ownLast && ownLast.text.trim() === result.text.trim()) {
-      const retry = await ai.generate(payload);
+    let parts = [];
+    let source = null;
+
+    // 1. The model, when it is configured and not cooling down after a failure.
+    //    A cooldown is skipped silently: the village is not in an error state.
+    const canAsk = ai && (!ai.canGenerate || ai.canGenerate());
+    if (canAsk) {
+      // One retry only when the model repeats the speaker's own previous line: that is
+      // the failure mode a small model actually has, and it is not worth a third call.
+      let result = await ai.generate(payload);
       if (session.status !== 'active') return;
-      if (retry.ok) result = retry;
+      const ownLast = [...session.messages].reverse().find((message) => message.speakerId === speakerId);
+      if (result.ok && ownLast && ownLast.text.trim() === result.text.trim()) {
+        const retry = await ai.generate(payload);
+        if (session.status !== 'active') return;
+        if (retry.ok) result = retry;
+      }
+
+      if (result.ok) {
+        session.failures = 0;
+        source = 'groq';
+        // The model is asked to fit one bubble. When it still runs over, the rest is
+        // spoken as another message after this one instead of being cut off.
+        parts = [result.text, ...(Array.isArray(result.extra) ? result.extra : [])].filter(Boolean);
+        // Keep the good lines: when the model goes away, the cache is the next rung.
+        dialogueCache.remember({
+          text: parts[0],
+          mode,
+          mood: session.mood,
+          topic: session.topic,
+          weatherKey: env.weather ? env.weather.key : '',
+          timeOfDay: env.timeOfDay,
+          category: mode,
+        });
+      } else if (result.error) {
+        session.errors.push({
+          at: new Date().toISOString(),
+          code: result.error.code,
+          message: result.error.message,
+          mode,
+        });
+        // A long outage should not grow a session's error list without limit.
+        if (session.errors.length > 12) session.errors.shift();
+        stats.lastError = session.errors[session.errors.length - 1];
+      }
     }
 
     session.pending = false;
 
-    if (result.ok) {
-      session.failures = 0;
-      // Nothing new to say: wrap the conversation up instead of letting them circle
-      // the same point. The next request is a closing line, so it ends on a goodbye.
-      if (mode !== 'closing' && turns(session) >= 2 && repeatsEarlier(session, result.text)) {
-        session.target = turns(session) + 1;
-        session.repeats = (session.repeats || 0) + 1;
-        return;
+    // 2. A line the model produced before for a comparable moment.
+    if (!parts.length && session.mood !== 'tense') {
+      const cached = dialogueCache.take({
+        mode,
+        mood: session.mood,
+        topic: session.topic,
+        weatherKey: env.weather ? env.weather.key : '',
+        timeOfDay: env.timeOfDay,
+        category: mode,
+        avoid: session.messages.map((message) => message.text).slice(-8),
+      });
+      if (cached) {
+        parts = [cached];
+        source = 'cached';
       }
-      // The model is asked to fit one bubble. When it still runs over, the rest is
-      // spoken as another message after this one instead of being cut off.
-      const parts = [result.text, ...(Array.isArray(result.extra) ? result.extra : [])].filter(Boolean);
-      session.followUps = parts.slice(1).map((text, index) => ({
+    }
+
+    // 3. The procedural engine. It cannot fail, which is what makes the village
+    //    independent of Groq rather than merely resilient to it.
+    if (!parts.length) {
+      const spoken = dialogue.line({
+        me: profile,
+        them: otherProfile,
+        relationship: relationships ? relationships.record(speakerEntry.id, listenerEntry.id) : null,
+        memories: memoryContext(speakerEntry, listenerEntry),
+        mode,
+        mood: session.mood,
+        weather: env.weather,
+        timeOfDay: env.timeOfDay,
+        news: session.news[0] || null,
+        topic: session.topic,
+        activity: activityOf(isA ? session.npcA : session.npcB),
+        recentLines: session.messages.map((message) => message.text).slice(-6),
+      });
+      parts = [spoken.text];
+      source = 'offline';
+      session.categories.push(spoken.category);
+    }
+
+    if (!parts.length) return;
+    sources[source] += 1;
+    session.lastSource = source;
+
+    // Nothing new to say: wrap the conversation up instead of letting them circle the
+    // same point. The cached and procedural paths already avoid repeats, so this guard
+    // applies to the model, which is the one likely to restate itself.
+    if (source === 'groq' && mode !== 'closing' && turns(session) >= 2 && repeatsEarlier(session, parts[0])) {
+      session.target = turns(session) + 1;
+      session.repeats = (session.repeats || 0) + 1;
+      return;
+    }
+
+    // Follow-ups are a model-only shape: the offline engine always speaks one bubble.
+    session.followUps = source === 'groq'
+      ? parts.slice(1).map((text, index) => ({
         speakerId,
         text,
         closing: mode === 'closing' && index === parts.length - 2,
-      }));
-      // a goodbye is the last thing said, so the pair can get back to their day
-      const farewell = mode !== 'opening' && isFarewell(parts[0]);
-      addMessage(session, speakerId, parts[0], 'groq', (mode === 'closing' || farewell) && !session.followUps.length);
-      if (farewell) {
-        finish(session, 'complete', 'said_goodbye');
-        return;
-      }
-      // Two sharp lines in a row: they have had the argument they were going to have,
-      // so it ends there rather than smouldering for another four turns.
-      if (session.mood === 'tense' && mode !== 'closing' && turns(session) >= 2
-        && !session.followUps.length
-        && session.messages.slice(-2).every((message) => ANGER.test(message.text))) {
-        finish(session, 'complete', 'argument');
-        return;
-      }
-      if (mode === 'opening') {
-        const list = recentOpeners.get(speakerId) || [];
-        list.push(result.text);
-        if (list.length > 4) list.shift();
-        recentOpeners.set(speakerId, list);
-      }
+      }))
+      : [];
+
+    // a goodbye is the last thing said, so the pair can get back to their day
+    const farewell = mode !== 'opening' && isFarewell(parts[0]);
+    addMessage(session, speakerId, parts[0], source, (mode === 'closing' || farewell) && !session.followUps.length);
+    if (farewell) {
+      finish(session, 'complete', 'said_goodbye');
       return;
     }
-
-    session.failures += 1;
-    session.errors.push({
-      at: new Date().toISOString(),
-      code: result.error ? result.error.code : 'unknown',
-      message: result.error ? result.error.message : 'generation failed',
-      mode,
-    });
-    stats.lastError = session.errors[session.errors.length - 1];
-
-    if (session.failures >= MAX_FAILURES) {
-      finish(session, 'failed', 'model_unavailable');
+    // Two sharp lines in a row: they have had the argument they were going to have,
+    // so it ends there rather than smouldering for another four turns.
+    if (session.mood === 'tense' && mode !== 'closing' && turns(session) >= 2
+      && !session.followUps.length
+      && session.messages.slice(-2).every((message) => ANGER.test(message.text))) {
+      finish(session, 'complete', 'argument');
       return;
     }
-
-    // The village keeps talking: a marked offline line fills the gap and the panel
-    // shows exactly which lines came from the model and which did not.
-    addMessage(session, speakerId, offlineLine(profile, { mode, rng }), 'offline', mode === 'closing');
+    if (mode === 'opening' && source === 'groq') {
+      const list = recentOpeners.get(speakerId) || [];
+      list.push(parts[0]);
+      if (list.length > 4) list.shift();
+      recentOpeners.set(speakerId, list);
+    }
   }
 
   function finish(session, outcome, reason = null) {
@@ -596,6 +736,8 @@ export function createConversations({
       closeReason: session.closeReason,
       pending: session.pending,
       followUps: (session.followUps || []).length,
+      lastSource: session.lastSource || null,
+      categories: (session.categories || []).slice(),
       // how long this chat has been running on the simulation clock, so the panel can
       // show progress and a stalled conversation is visible rather than silent
       clock: Number(session.clock.toFixed(1)),
@@ -619,6 +761,10 @@ export function createConversations({
       return session ? snapshotSession(session) : null;
     },
     stats: () => ({ ...stats, active: sessions.size, cooldowns: pairCooldowns.size }),
+    // Which dialogue path is live right now, and what each one has produced. This is
+    // what the debug panel reads: the mode is never hidden from the reader.
+    mode: currentMode,
+    dialogueStatus,
     // exposed so the debug panel can explain why this pair is quiet
     cooldownRemaining: (aId, bId) => Math.max(0, Math.round(((pairCooldowns.get(pairKey(aId, bId)) || 0) - Date.now()) / 1000)),
     resetCooldowns: () => pairCooldowns.clear(),

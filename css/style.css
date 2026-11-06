@@ -979,3 +979,18 @@ html, body {
 }
 
 .np-section-ai ~ .np-label { margin-top: 6px; }
+
+/* Dialogue mode: which path is writing speech right now. Groq, lines the model wrote
+   earlier, or the procedural engine. The colour is the only difference on purpose. */
+.sim-mode {
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  padding: 1px 5px;
+  border: 1px solid #3a3550;
+  border-radius: 2px;
+  color: #cfc6f2;
+}
+.sim-mode.dlg-groq { color: #8be28b; border-color: #2f5a33; }
+.sim-mode.dlg-cached { color: #e8cf7a; border-color: #5a4d22; }
+.sim-mode.dlg-offline { color: #8fb7f0; border-color: #2b3f5e; }
+.cl-tag.cl-cached { color: #e8cf7a; border-color: #5a4d22; }

@@ -218,6 +218,21 @@ async function init() {
     rng,
     // the lifestyle machine hands the pair back once the chat is over
     onHandBack: (npc) => { if (state.lifestyles) state.lifestyles.handBack(npc); },
+    // What a villager would notice at this moment. Read fresh for every line, so a
+    // conversation that runs past sunset starts mentioning the evening.
+    environment: () => {
+      const sky = state.weather.state();
+      return {
+        timeOfDay: state.clock.phase(),
+        weather: {
+          key: sky.key,
+          label: sky.label,
+          temperature: sky.temperature,
+          wet: sky.wet,
+          snowy: sky.snowy,
+        },
+      };
+    },
   });
 
   // Once the probe answers, pull what this village already remembers from Supabase
@@ -361,6 +376,8 @@ async function init() {
     weather: state.weather,
     lifestyle: state.lifestyles,
     getNpcs: () => state.npcs,
+    ai: state.ai,
+    conversations: state.conversations,
   });
 
   // The second extra button on the same panel: Conversation Logs, where a transcript
