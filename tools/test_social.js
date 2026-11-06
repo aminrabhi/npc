@@ -74,19 +74,43 @@ check('script parser drops blank rows and caps a long script', () => {
   assert.equal(parseScript(long, a, b).length, 30);
 });
 
-function makeNpc(id, name) {
+function makeVillage() {
+  return {
+    tileSize: 16,
+    cols: 40,
+    rows: 40,
+    region: null,
+    doorways: new Set(),
+    blockedValue: () => 0,
+    isSolid: () => false,
+    isWalkable: () => true,
+  };
+}
+
+function makeNpc(id, name, x = 160) {
   return {
     name,
     config: { id },
     sim: { state: 'walking', dialogue: null, session: null, partner: null },
     heldItem: null,
     room: null,
+    village: makeVillage(),
+    x,
+    y: 160,
+    speed: 26,
+    path: [],
+    waitTime: 0,
+    moving: false,
+    get tile() {
+      return { x: Math.floor(this.x / 16), y: Math.floor(this.y / 16) };
+    },
   };
 }
 
 function makeSocial(overrides = {}) {
-  const npcs = [makeNpc('npc_1', 'Ada'), makeNpc('npc_2', 'Bo')];
+  const npcs = [makeNpc('npc_1', 'Ada', 160), makeNpc('npc_2', 'Bo', 176)];
   const applied = [];
+  let clock = 1000;
   const social = createSocial({
     relationships: {
       category: () => 'neutral',
@@ -105,10 +129,15 @@ function makeSocial(overrides = {}) {
     },
     conversations: { abandon: () => {} },
     rng: () => 0.25,
-    now: () => 1000,
+    now: () => clock,
     ...overrides,
   });
-  return { social, npcs, applied };
+  return {
+    social,
+    npcs,
+    applied,
+    advance: (ms) => { clock += ms; },
+  };
 }
 
 check('a fight is refused between villagers who do not dislike each other', () => {
@@ -126,13 +155,37 @@ check('a forced fight arms both villagers with swords and then scores it', () =>
   assert.equal(npcs[1].heldItem, 'sword');
   assert.equal(npcs[0].sim.fighting, true);
 
-  for (let i = 0; i < 60 && social.status().fighting; i += 1) social.update(0.25);
+  let sawChase = false;
+  let sawDamage = false;
+  for (let i = 0; i < 120 && social.status().fighting; i += 1) {
+    social.update(0.2);
+    const state = social.status();
+    if (state.phase === 'chase') sawChase = true;
+    if (state.hp.some((hp) => hp < 100)) sawDamage = true;
+  }
 
-  assert.equal(social.status().fighting, false);
+  const state = social.status();
+  assert.equal(state.fighting, false);
+  assert.equal(state.stunned, true);
+  assert.equal(sawChase, true);
+  assert.equal(sawDamage, true);
+  assert.equal(npcs.some((npc) => npc.sim.stunned === true), true);
   assert.equal(npcs[0].sim.fighting, false);
   assert.equal(npcs[0].heldItem, null);
   assert.equal(applied.length, 1);
   assert.equal(applied[0].options.disagreement, true);
+});
+
+check('a knocked-out villager recovers after the stun', () => {
+  const { social, npcs, advance } = makeSocial();
+  social.startFight(npcs[0], npcs[1], { forced: true });
+  for (let i = 0; i < 120 && social.status().fighting; i += 1) social.update(0.2);
+  assert.equal(social.status().stunned, true);
+
+  advance(6100);
+  social.update(0.1);
+  assert.equal(social.status().stunned, false);
+  assert.equal(npcs.some((npc) => npc.sim.stunned === true), false);
 });
 
 check('an argument between enemies escalates into a fight', () => {
@@ -166,9 +219,11 @@ check('punish and pet answer with a preset line', () => {
   const punished = social.punish(npcs[0]);
   assert.ok(PUNISH_LINES.includes(punished.line));
   assert.equal(npcs[0].sim.dialogue, punished.line);
+  assert.equal(npcs[0].sim.emote, 'stress');
   const petted = social.pet(npcs[1]);
   assert.ok(PET_LINES.includes(petted.line));
   assert.equal(npcs[1].sim.react, 'pet');
+  assert.equal(npcs[1].sim.emote, 'love');
 });
 
 check('a scripted conversation plays its own lines and finishes', () => {

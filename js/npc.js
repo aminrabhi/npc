@@ -7,6 +7,7 @@
 
 import { findPath, doorApproach } from './pathing.js';
 import { drawHeldItem } from './items.js';
+import { drawEmote } from './emotes.js';
 
 const CELL_W = 96;
 const CELL_H = 64;
@@ -526,11 +527,17 @@ export class NPC {
     const sim = this.sim || {};
     // A fight is a short lunge towards the other villager, not a new sprite: the
     // body strip steps forward and back while the sword swings in the hand.
-    const lunge = sim.fighting ? Math.round(Math.sin(this.animTime * 9) * 2) : 0;
+    const attacking = sim.attackUntil && Date.now() < sim.attackUntil;
+    const lunge = sim.fighting
+      ? Math.round(Math.sin(this.animTime * (attacking ? 22 : 9)) * (attacking ? 4 : 2))
+      : 0;
     // Being punished makes them shrink a pixel; being petted makes them bob.
     const bow = sim.react === 'punish' ? 1 : 0;
-    const px = Math.round(this.x) + lunge * this.facing;
-    const py = Math.round(this.y) + bow;
+    // Dazed villagers sway and sag where they stand until the stun runs out.
+    const dazed = sim.stunned ? Math.round(Math.sin(this.animTime * 16)) : 0;
+    const slump = sim.stunned ? 3 : 0;
+    const px = Math.round(this.x) + lunge * this.facing + dazed;
+    const py = Math.round(this.y) + bow + slump;
 
     const sheet = this.moving ? this.sheets.walk : this.sheets.idle;
     const frames = this.moving ? WALK_FRAMES : IDLE_FRAMES;
@@ -558,6 +565,7 @@ export class NPC {
     ctx.restore();
 
     this.drawName(ctx);
+    drawEmote(ctx, this, Math.round(this.x), py);
   }
 
   // The name floats over the villager in the pack's pixel font. It is drawn in world

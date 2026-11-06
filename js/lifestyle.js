@@ -464,6 +464,8 @@ export function createLifestyle({
   // conversation early and send everyone off mid-sentence. Hold the pose instead;
   // the chat timer ends it properly.
   function continueFromWait(npc, sim) {
+    // Fights and scripted scenes drive their own movement and hold their own timers.
+    if (sim.fighting || sim.stunned) return;
     const partner = sim.partner;
     if (sim.state === 'talking' && partner && partner.sim && partner.sim.state === 'talking') {
       stopForTalk(npc);
@@ -559,6 +561,8 @@ export function createLifestyle({
     }
 
     if (sim.state === 'talking') {
+      // A chase is fought on the move: do not plant the pair face to face.
+      if (sim.fighting) return;
       const partner = sim.partner;
       // A partner who is no longer talking to *us* has moved on: follow them instead
       // of standing here facing a villager who is already walking away.
@@ -637,6 +641,16 @@ export function createLifestyle({
       const npcs = getNpcs();
       for (const npc of npcs) {
         const sim = simOf(npc);
+        // A knocked-out villager stays where they fell until the social layer releases
+        // them, no matter what the day planner would rather be doing.
+        if (sim.stunned) {
+          npc.path = [];
+          npc.moving = false;
+          npc.waitTime = 1e9;
+          sim.timer = 600;
+          npc.update(dt);
+          continue;
+        }
         const before = sim.state;
         // The clock only runs once a villager has arrived: a room visit is not over
         // because the walk took a while, and a chat does not burn its time while the
@@ -646,10 +660,10 @@ export function createLifestyle({
           && Math.hypot(sim.partner.x - npc.x, sim.partner.y - npc.y) > TALK_GAP;
         if (!visiting && !apart) sim.timer -= dt;
         if (clock.isNight()) {
-          if (sim.state !== 'sleeping') startSleep(npc, sim);
-        } else if (sim.state === 'sleeping') {
+          if (sim.state !== 'sleeping' && !sim.fighting) startSleep(npc, sim);
+        } else if (sim.state === 'sleeping' && !sim.fighting) {
           wake(npc, sim);
-        } else if (sim.timer <= 0) {
+        } else if (sim.timer <= 0 && !sim.fighting) {
           planNext(npc, sim);
         }
         // remembering the last state is what makes the studio readout and the

@@ -51,7 +51,10 @@ export function drawHeldItem(ctx, npc, px, py) {
   if (!sprite) return;
 
   const sim = npc.sim || {};
-  const swing = sim.fighting ? Math.sin(npc.animTime * 10) * 0.55 : 0;
+  const attacking = sim.attackUntil && Date.now() < sim.attackUntil;
+  const swing = sim.fighting
+    ? Math.sin(npc.animTime * (attacking ? 24 : 10)) * (attacking ? 0.95 : 0.55)
+    : 0;
   const bob = sim.react === 'pet' ? Math.sin(npc.animTime * 14) : 0;
   const rest = ITEMS[id].angle;
 

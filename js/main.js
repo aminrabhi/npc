@@ -25,6 +25,7 @@ import { createConversations } from './conversation.js';
 import { createConvLogs } from './conv_logs.js';
 import { createRelPanel } from './rel_panel.js';
 import { loadItems } from './items.js';
+import { loadEmotes } from './emotes.js';
 import { createSocial } from './social.js';
 import { createScriptPanel } from './script_panel.js';
 
@@ -95,6 +96,7 @@ async function init() {
     loadNpcRoster('data/npcs.json'),
     loadNpcAssets(),
     loadItems(),
+    loadEmotes(),
   ]);
 
   // Names are painted straight onto the canvas, so the pixel font has to be ready

@@ -1,14 +1,17 @@
 // Player interactions, fights and scripted conversations.
 //
 // Three things live here, all of them deliberately outside the model:
-//   * preset reactions to a left click (punish) and a right click (pet)
-//   * fights, which only start between villagers who genuinely dislike each other,
-//     or when the debug panel forces one so it can be watched
+//   * preset reactions to a left click (punish) and a right click (pet), each with
+//     an animated expression icon from the pack
+//   * fights, which start between villagers who genuinely dislike each other, or
+//     when the debug panel forces one so it can be watched
 //   * scripted conversations typed into the debug panel
 //
-// A fight is a conversation in spirit: both villagers hold a sword, trade preset
-// lines, and the relationship records pay for it when it ends. Nothing here calls
-// Groq or Supabase directly; the relationships module already owns persistence.
+// A fight runs on hidden hit points. When one side is badly hurt they break and run;
+// the other gives chase, a little faster, until the loser is knocked out and left
+// dazed on the ground for a while. The relationship records pay for all of it.
+
+import { findPath } from './pathing.js';
 
 export const PUNISH_LINES = [
   'Sorry, Master.',
@@ -75,6 +78,23 @@ export const FIGHT_LINES = [
   'Enough.',
 ];
 
+export const FLEE_LINES = [
+  'That is enough!',
+  'I am leaving.',
+  'Do not come closer.',
+  'You are mad.',
+  'Get away from me.',
+  'I am done with this.',
+];
+
+export const KO_LINES = [
+  'Stay down.',
+  'Had enough?',
+  'Do not get up.',
+  'That is the end of it.',
+  'And stay there.',
+];
+
 const ARGUMENT_LINES = [
   { speaker: 0, text: 'You have been impossible all day.' },
   { speaker: 1, text: 'Then stop talking to me.' },
@@ -84,6 +104,10 @@ const ARGUMENT_LINES = [
 
 const HOSTILE = new Set(['disliked', 'enemy']);
 const MAX_SCRIPT_LINES = 30;
+const MAX_HP = 100;
+const FLEE_HP = 30;
+const STUN_MS = 6000;
+const FIGHT_LIMIT = 18;
 
 const pick = (rng, list) => list[Math.floor(rng() * list.length) % list.length];
 
@@ -141,6 +165,7 @@ export function createSocial({
 } = {}) {
   let fight = null;
   let script = null;
+  let stun = null;
   const sayTokens = new Map();
 
   const simOf = (npc) => (npc && npc.sim ? npc.sim : null);
@@ -162,6 +187,21 @@ export function createSocial({
     const sim = simOf(npc);
     sayTokens.delete(npc);
     if (sim) sim.dialogue = null;
+  }
+
+  function emote(npc, id, ms = 2600) {
+    const sim = simOf(npc);
+    if (!sim) return;
+    sim.emote = id;
+    sim.emoteAt = now();
+    sim.emoteUntil = now() + ms;
+  }
+
+  function clearEmote(npc) {
+    const sim = simOf(npc);
+    if (!sim) return;
+    sim.emote = null;
+    sim.emoteUntil = 0;
   }
 
   function abandon(npc) {
@@ -192,6 +232,7 @@ export function createSocial({
       sim.react = 'punish';
       sim.reactUntil = now() + 1600;
     }
+    emote(npc, 'stress', 2400);
     say(npc, line, 4600);
     return { line };
   }
@@ -204,6 +245,7 @@ export function createSocial({
       sim.react = 'pet';
       sim.reactUntil = now() + 1600;
     }
+    emote(npc, 'love', 2800);
     say(npc, line, 4600);
     return { line };
   }
@@ -214,8 +256,64 @@ export function createSocial({
     if (lifestyle && lifestyle.pose) lifestyle.pose(a, b);
   }
 
+  function releaseFighter(npc, f) {
+    const sim = simOf(npc);
+    if (sim) {
+      sim.fighting = false;
+      sim.react = null;
+    }
+    if (f && f.speeds.has(npc)) npc.speed = f.speeds.get(npc);
+    npc.heldItem = f && f.items.has(npc) ? f.items.get(npc) : null;
+    npc.path = [];
+    npc.moving = false;
+    npc.waitTime = 0.2;
+  }
+
+  function scoreFight(f) {
+    if (!relationships) return;
+    const messages = transcript(f.a, f.b, FIGHT_LINES.slice(0, 4).map((text, index) => ({
+      speaker: index % 2 === 0 ? f.a : f.b,
+      text,
+    })));
+    relationships.applyConversation({
+      participants: [
+        { id: f.a.config.id, name: f.a.name },
+        { id: f.b.config.id, name: f.b.name },
+      ],
+      messages,
+      mood: 'tense',
+    }, { disagreement: true });
+  }
+
+  function stopFight({ scored = false } = {}) {
+    if (!fight) return false;
+    const f = fight;
+    fight = null;
+    for (const npc of [f.a, f.b]) releaseFighter(npc, f);
+    if (scored) scoreFight(f);
+    if (lifestyle) {
+      lifestyle.handBack(f.a);
+      lifestyle.handBack(f.b);
+    }
+    return true;
+  }
+
+  function clearStun() {
+    if (!stun) return;
+    const npc = stun.npc;
+    stun = null;
+    const sim = simOf(npc);
+    if (sim) {
+      sim.stunned = false;
+      sim.stunnedUntil = 0;
+    }
+    clearEmote(npc);
+    if (lifestyle) lifestyle.handBack(npc);
+  }
+
   function startFight(a, b, { forced = false } = {}) {
     if (fight) stopFight();
+    clearStun();
     if (!a || !b || a === b) return { ok: false, reason: 'Pick two different villagers.' };
     if (a.room || b.room) return { ok: false, reason: 'They need to be outside to fight.' };
     const sa = simOf(a);
@@ -227,7 +325,8 @@ export function createSocial({
       return { ok: false, reason: 'They do not dislike each other enough to fight.' };
     }
 
-    const restore = [a.heldItem || null, b.heldItem || null];
+    const items = new Map([[a, a.heldItem || null], [b, b.heldItem || null]]);
+    const speeds = new Map([[a, a.speed], [b, b.speed]]);
     pose(a, b);
     a.heldItem = 'sword';
     b.heldItem = 'sword';
@@ -237,52 +336,129 @@ export function createSocial({
     fight = {
       a,
       b,
-      restore,
+      items,
+      speeds,
+      hp: new Map([[a, MAX_HP], [b, MAX_HP]]),
       elapsed: 0,
-      duration: 6.5 + rng() * 2.5,
+      duration: FIGHT_LIMIT,
+      attackAt: 0.9,
       nextLine: 0.35,
       lineIndex: 0,
+      turn: 0,
+      phase: 'brawl',
+      fleeing: null,
+      chaser: null,
+      nextFlee: 0,
+      nextChase: 0,
       forced,
     };
     return { ok: true, fight };
   }
 
-  function stopFight({ scored = false } = {}) {
-    if (!fight) return false;
-    const { a, b, restore } = fight;
-    const elapsed = fight.elapsed;
-    fight = null;
-
-    for (const [npc, item] of [[a, restore[0]], [b, restore[1]]]) {
-      const sim = simOf(npc);
-      if (sim) {
-        sim.fighting = false;
-        sim.react = null;
+  // A route to open ground as far from the attacker as possible, staying in the same
+  // walkable region so nobody flees across a river to escape a fight.
+  function fleePath(npc, threat) {
+    if (!npc || !npc.village || !npc.tile) return null;
+    const village = npc.village;
+    const tile = npc.tile;
+    const T = village.tileSize || 16;
+    let best = null;
+    let bestGap = -1;
+    for (let attempt = 0; attempt < 26; attempt += 1) {
+      const dx = Math.round((rng() * 2 - 1) * 12);
+      const dy = Math.round((rng() * 2 - 1) * 12);
+      if (Math.hypot(dx, dy) < 5) continue;
+      const goal = { x: tile.x + dx, y: tile.y + dy };
+      if (goal.x < 0 || goal.y < 0 || goal.x >= village.cols || goal.y >= village.rows) continue;
+      if (village.blockedValue(goal.x, goal.y) !== 0) continue;
+      if (village.isDoorway && village.isDoorway(goal.x, goal.y)) continue;
+      if (village.region && npc.regionId !== undefined && npc.regionId !== null
+        && village.region[goal.y * village.cols + goal.x] !== npc.regionId) continue;
+      const path = findPath(village, tile, goal, { avoid: village.doorways });
+      if (!path || !path.length) continue;
+      const gap = Math.hypot(goal.x * T + T / 2 - threat.x, goal.y * T + T / 2 - threat.y);
+      if (gap > bestGap) {
+        bestGap = gap;
+        best = path;
       }
-      npc.heldItem = item;
+    }
+    return best;
+  }
+
+  function beginChase(f, victim) {
+    const chaser = victim === f.a ? f.b : f.a;
+    f.phase = 'chase';
+    f.fleeing = victim;
+    f.chaser = chaser;
+    // The runaway gets a small head start; the pursuer is a little faster so the
+    // chase closes instead of running forever.
+    victim.speed = Math.max(18, victim.speed * 0.88);
+    chaser.speed = victim.speed * 1.16;
+    victim.path = [];
+    victim.waitTime = 0;
+    chaser.path = [];
+    chaser.waitTime = 0;
+    // Start running immediately: a fight begins within speaking distance, so waiting
+    // for the gap to grow would leave the loser standing still while being hit.
+    const escape = fleePath(victim, chaser);
+    if (escape) {
+      victim.path = escape;
+      victim.moving = true;
+    }
+    emote(victim, 'alerted', 2600);
+    say(victim, pick(rng, FLEE_LINES), 2400);
+    f.nextFlee = 0;
+    f.nextChase = 0;
+    f.attackAt = f.elapsed + 0.5;
+  }
+
+  function chaseStep(f) {
+    const victim = f.fleeing;
+    const chaser = f.chaser;
+    if (!victim || !chaser) return;
+    const gap = Math.hypot(victim.x - chaser.x, victim.y - chaser.y);
+
+    if ((!victim.path.length || f.elapsed >= f.nextFlee) && gap > 18) {
+      const path = fleePath(victim, chaser);
+      if (path) {
+        victim.path = path;
+        victim.waitTime = 0;
+        victim.moving = true;
+      }
+      f.nextFlee = f.elapsed + 1.4;
     }
 
-    if (scored && relationships && elapsed > 1) {
-      const messages = transcript(a, b, FIGHT_LINES.slice(0, 4).map((text, index) => ({
-        speaker: index % 2 === 0 ? a : b,
-        text,
-      })));
-      relationships.applyConversation({
-        participants: [
-          { id: a.config.id, name: a.name },
-          { id: b.config.id, name: b.name },
-        ],
-        messages,
-        mood: 'tense',
-      }, { disagreement: true });
+    if (!chaser.village || !victim.village) return;
+    if (!chaser.path.length || f.elapsed >= f.nextChase) {
+      const path = findPath(chaser.village, chaser.tile, victim.tile, { avoid: chaser.village.doorways });
+      if (path && path.length) {
+        chaser.path = path;
+        chaser.waitTime = 0;
+        chaser.moving = true;
+      }
+      f.nextChase = f.elapsed + 0.45;
     }
+  }
 
-    if (lifestyle) {
-      lifestyle.handBack(a);
-      lifestyle.handBack(b);
+  function knockout(f, loser, winner) {
+    fight = null;
+    for (const npc of [f.a, f.b]) releaseFighter(npc, f);
+    scoreFight(f);
+    if (lifestyle) lifestyle.handBack(winner);
+
+    const sim = simOf(loser);
+    if (sim) {
+      sim.stunned = true;
+      sim.stunnedUntil = now() + STUN_MS;
+      sim.dialogue = null;
+      loser.path = [];
+      loser.moving = false;
+      loser.waitTime = 1e9;
+      loser.facing = winner.x >= loser.x ? 1 : -1;
+      emote(loser, 'dizzy', STUN_MS);
     }
-    if (scored) say(a, 'We are done here.', 3200);
-    return true;
+    say(winner, pick(rng, KO_LINES), 3000);
+    stun = { npc: loser, until: (sim && sim.stunnedUntil) || now() + STUN_MS };
   }
 
   function playScript(a, b, source, { fightAfter = false } = {}) {
@@ -332,7 +508,7 @@ export function createSocial({
   }
 
   // A forced argument for the debug panel: a short row, then a fight so the swords
-  // and swings can actually be watched.
+  // and the chase can actually be watched.
   function argue(a, b) {
     const lines = ARGUMENT_LINES.map((entry) => ({
       speakerId: entry.speaker === 0
@@ -347,9 +523,7 @@ export function createSocial({
   // already dislikes each other. Friends can argue and make up without drawing steel.
   function escalate(session) {
     if (!session || session.outcome !== 'complete') return false;
-    if (fight || script) return false;
-    // A proper row always counts; a merely tense chat between enemies has a good
-    // chance of boiling over as well, so bad blood eventually shows.
+    if (fight || script || stun) return false;
     const argued = session.closeReason === 'argument';
     const boiling = session.mood === 'tense' && rng() < 0.45;
     if (!argued && !boiling) return false;
@@ -359,6 +533,7 @@ export function createSocial({
 
   function stopAll() {
     if (fight) stopFight();
+    if (stun) clearStun();
     if (script) {
       const { a, b } = script;
       script = null;
@@ -374,11 +549,18 @@ export function createSocial({
 
     for (const npc of getNpcs()) {
       const sim = simOf(npc);
-      if (sim && sim.react && sim.reactUntil && now() >= sim.reactUntil) {
+      if (!sim) continue;
+      if (sim.react && sim.reactUntil && now() >= sim.reactUntil) {
         sim.react = null;
         sim.reactUntil = 0;
       }
+      if (sim.emote && sim.emoteUntil && now() > sim.emoteUntil && !sim.stunned) {
+        sim.emote = null;
+        sim.emoteUntil = 0;
+      }
     }
+
+    if (stun && now() >= stun.until) clearStun();
 
     if (script) {
       script.elapsed += step;
@@ -400,15 +582,44 @@ export function createSocial({
     }
 
     if (fight) {
-      fight.elapsed += step;
-      if (fight.elapsed >= fight.nextLine) {
-        const speaker = fight.lineIndex % 2 === 0 ? fight.a : fight.b;
-        const other = speaker === fight.a ? fight.b : fight.a;
+      const f = fight;
+      f.elapsed += step;
+      if (f.phase === 'chase') chaseStep(f);
+
+      if (f.elapsed >= f.nextLine) {
+        const speaker = f.lineIndex % 2 === 0 ? f.a : f.b;
+        const other = speaker === f.a ? f.b : f.a;
         clearSay(other);
-        say(speaker, FIGHT_LINES[fight.lineIndex % FIGHT_LINES.length], 2600);
-        fight.lineIndex += 1;
-        fight.nextLine = fight.elapsed + 1.25 + rng() * 0.5;
+        say(speaker, FIGHT_LINES[f.lineIndex % FIGHT_LINES.length], 2200);
+        f.lineIndex += 1;
+        f.nextLine = f.elapsed + 0.8 + rng() * 0.4;
       }
+
+      const gap = f.phase === 'chase'
+        ? Math.hypot(f.chaser.x - f.fleeing.x, f.chaser.y - f.fleeing.y)
+        : 0;
+      if (f.elapsed >= f.attackAt && (f.phase !== 'chase' || gap < 30)) {
+        const attacker = f.phase === 'chase'
+          ? f.chaser
+          : (f.turn % 2 === 0 ? f.a : f.b);
+        const defender = attacker === f.a ? f.b : f.a;
+        const damage = 8 + Math.floor(rng() * 8);
+        const hp = Math.max(0, (f.hp.get(defender) ?? MAX_HP) - damage);
+        f.hp.set(defender, hp);
+        f.turn += 1;
+        f.attackAt = f.elapsed + 0.55 + rng() * 0.35;
+
+        const attackerSim = simOf(attacker);
+        if (attackerSim) attackerSim.attackUntil = now() + 320;
+        emote(defender, 'stress', 1000);
+
+        if (hp <= 0) {
+          knockout(f, defender, attacker);
+          return;
+        }
+        if (hp <= FLEE_HP && f.phase === 'brawl') beginChase(f, defender);
+      }
+
       if (fight && fight.elapsed >= fight.duration) stopFight({ scored: true });
     }
   }
@@ -418,6 +629,11 @@ export function createSocial({
       fighting: !!fight,
       fighters: fight ? [fight.a.name, fight.b.name] : [],
       fightElapsed: fight ? Number(fight.elapsed.toFixed(1)) : 0,
+      phase: fight ? fight.phase : null,
+      hp: fight ? [fight.hp.get(fight.a), fight.hp.get(fight.b)] : [],
+      fleeing: fight && fight.fleeing ? fight.fleeing.name : null,
+      stunned: !!stun,
+      stunnedName: stun ? stun.npc.name : null,
       scripting: !!script,
       scriptIndex: script ? script.index : 0,
       scriptLines: script ? script.lines.length : 0,

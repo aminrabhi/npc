@@ -1024,3 +1024,9 @@ html, body {
 #script-panel .sim-row {
   flex-wrap: wrap;
 }
+
+/* The village uses the pack's own arrow cursor; the editors still override this
+   with their tool cursors while they are open. */
+#view {
+  cursor: url("assets/ui/cursor.png") 1 1, default;
+}

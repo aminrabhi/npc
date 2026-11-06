@@ -130,6 +130,8 @@ export function createScriptPanel({ roster = [], social, getNpcs }) {
     const state = social.status();
     if (state.fighting) {
       note(`fighting: ${state.fighters.join(' vs ')}`);
+    } else if (state.stunned) {
+      note(`${state.stunnedName} is dazed for a moment.`);
     } else if (state.scripting) {
       note(`playing ${state.scriptIndex}/${state.scriptLines}`);
     } else {
