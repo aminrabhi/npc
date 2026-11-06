@@ -149,6 +149,11 @@ export function sanitiseMessages(raw, { maxChars = LINE_BUDGET.chars, maxMessage
   text = text.replace(/[\u{1F000}-\u{1FAFF}\u{1F1E6}-\u{1F1FF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}]/gu, ' ');
   // wrapping quotes
   text = text.replace(/^\s*["'“”‘’]+/, '').replace(/["'“”‘’]+\s*$/, '');
+  // The model sometimes reports its own budget back: "(98 characters)", "- 98 chars",
+  // "98/110 characters". That is a note to a developer, not something a villager says.
+  text = text.replace(/[([{]\s*\d+\s*(?:\/\s*\d+\s*)?(?:characters?|chars?|words?)\s*[)\]}]/gi, ' ');
+  text = text.replace(/[—–-]\s*\d+\s*(?:\/\s*\d+\s*)?(?:characters?|chars?|words?)\b/gi, ' ');
+  text = text.replace(/\b\d+\s*(?:\/\s*\d+\s*)?(?:characters?|chars?)\b/gi, ' ');
 
   // The model is told to break a second thought onto a new line, so line breaks are
   // respected instead of being flattened into one long speech bubble.
@@ -157,6 +162,11 @@ export function sanitiseMessages(raw, { maxChars = LINE_BUDGET.chars, maxMessage
     .map((line) => line.replace(/[ \t]+/g, ' ').trim())
     // "Tiny: ..." on any line, not only the first one
     .map((line) => line.replace(/^[A-Z][\w' .-]{0,20}:\s*/, ''))
+    // a quoted line keeps its own pair even when the outer pair was already removed
+    .map((line) => line.replace(/^["“”]+\s*/, '').replace(/\s*["“”]+$/, ''))
+    .map((line) => (/^['‘]/.test(line) && /['’]$/.test(line)
+      ? line.replace(/^['‘]\s*/, '').replace(/\s*['’]$/, '')
+      : line))
     .filter(Boolean);
   if (!paragraphs.length) return [];
 

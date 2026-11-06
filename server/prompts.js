@@ -123,7 +123,8 @@ export function buildMessages({
     me.dislikes ? `Dislikes: ${me.dislikes}.` : '',
     me.tendencies ? `Habits: ${me.tendencies}.` : '',
     me.style ? `Speaking style: ${me.style}.` : '',
-    `Keep it to one or two short sentences, at most ${MAX_WORDS} words and under ${LINE_BUDGET.chars} characters in total: a speech bubble holds two lines of about ${LINE_BUDGET.lineChars} characters. If a thought needs more room, reword it shorter. Never stop mid-sentence, never trail off with an ellipsis. Plain, everyday speech.`,
+    `Keep it to one or two short sentences, at most ${MAX_WORDS} words and under ${LINE_BUDGET.chars} characters in total: a speech bubble holds two lines of about ${LINE_BUDGET.lineChars} characters. If a thought needs more room, reword it shorter. Never stop mid-sentence, never trail off with an ellipsis.`,
+    'Talk like a real person in a casual chat: plain everyday words, short sentences, contractions. No fancy or literary vocabulary, no speeches, no clever phrasing.',
     'Never talk about the village itself: no village gossip, no news from round here, no talk of the square, the neighbours or how things are done in this place. Talk about the wider world instead: the city, money, food, music, work, family, the past, dreams, sport, something strange you saw. Anything real.',
     mood === 'tense'
       ? 'You are already annoyed with them before they speak. Be short, sharp and unfair. Pick at something they did. Do not soften it, and do not apologise unless you mean it.'
@@ -131,6 +132,8 @@ export function buildMessages({
     'If you have two things to say, put the second on a new line. A villager never writes a paragraph.',
     'No stage directions, no actions in brackets, asterisks or angle brackets, no emojis, no quotation marks, no narration.',
     'Never write your own name or a label like "Name:" before your words.',
+    'Give the message itself and nothing else: no quotation marks around it, no character or word count, no note about length, no description of what you did.',
+    'Your backstory, interests, likes and habits are background, not a script. Do not introduce yourself or list them. Mention one only if it comes up on its own, and never repeat something you have already said in this conversation.',
     'Never mention AI, models, prompts, servers or the fact that you are simulated.',
     'Every line must add something: answer, ask, disagree, reveal, tease. Never restate, rephrase or summarise a point that has already been made, by either of you.',
     'If you have nothing new to add, say a short goodbye and stop. A conversation is allowed to end early; never pad it to keep it going.',

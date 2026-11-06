@@ -120,6 +120,12 @@ try {
   check('a speaker label is stripped from any line, not only the first', !/Tiny/.test(secondLabel), secondLabel);
   const emoji = sanitiseLine('The tomatoes are doing well 😀🍅 today.');
   check('emoji are stripped from a line', !/[\u{1F300}-\u{1FAFF}]/u.test(emoji) && /tomatoes/.test(emoji), emoji);
+  const counted = sanitiseLine('Mama Green: "I could eat a whole pie." (110 characters)');
+  check('labels, quotes and character counts are stripped', !/["“”]/.test(counted) && !/character/i.test(counted) && /pie/.test(counted), counted);
+  const countedTail = sanitiseLine('That sounds about right. 98/110 characters');
+  check('a trailing character count is dropped', !/character/i.test(countedTail) && /right/.test(countedTail), countedTail);
+  const quotedTwo = sanitiseLine('"Morning, you are up early."\n"The tomatoes look good."');
+  check('quotes around each line are stripped', !/["“”]/.test(quotedTwo), quotedTwo);
   const split = sanitiseMessages('The weather has been strange lately and the tomatoes are late this year. I was thinking we should plant them earlier before the frost comes in and cover the beds at night so nothing freezes.');
   check('a long reply becomes a second message, not a cut-off', split.length >= 2, `${split.length}`);
   check('each split message still fits a bubble', split.every((part) => part.length <= 110), JSON.stringify(split));
@@ -128,6 +134,9 @@ try {
   const prompt = buildMessages({ speaker: { name: 'Mama Green' }, listener: { name: 'Timmy' }, mode: 'opening' });
   check('prompt asks for one or two short sentences', /one or two short sentences/i.test(prompt[0].content));
   check('prompt asks for a line break on a second thought', /new line/i.test(prompt[0].content));
+  check('prompt tells the model not to recite its backstory', /background, not a script/i.test(prompt[0].content));
+  check('prompt asks for the message only, with no count', /no character or word count/i.test(prompt[0].content));
+  check('prompt asks for plain casual words', /plain everyday words/i.test(prompt[0].content));
 
   console.log('\nchat');
   const conversation = {
