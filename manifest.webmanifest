@@ -1,0 +1,27 @@
+{
+  "id": "/",
+  "name": "Simulora",
+  "short_name": "Simulora",
+  "description": "A pixel village where ten villagers live out a day.",
+  "lang": "en",
+  "dir": "ltr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#17142a",
+  "theme_color": "#17142a",
+  "icons": [
+    {
+      "src": "/assets/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
