@@ -189,6 +189,9 @@ async function init() {
         npc.sheets = sheetsFor(config, npcAssets, state.sheetCache);
         npc.name = config.name || '';
         npc.config = config;
+        // Equipment edits take effect immediately; a fight keeps its temporary sword
+        // until the fight hands the old item back.
+        if (!npc.sim || !npc.sim.fighting) npc.heldItem = config.heldItem || null;
         npc.setHome(home);
         npc.regionId = region[home.y * village.cols + home.x];
       }

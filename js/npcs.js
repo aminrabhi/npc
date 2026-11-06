@@ -104,6 +104,9 @@ export function normaliseNpc(raw, index) {
     body: raw.body || BODIES[0].id,
     hair: raw.hair || HAIRS[0].id,
     hand: raw.hand || 'none',
+    // The separate item overlay: sword, axe, pickaxe, or nothing. `hand` is the
+    // baked-in tool layer, so a villager can have both a tool strip and an item.
+    heldItem: raw.heldItem ? String(raw.heldItem) : null,
     skin: raw.skin || null,
     shirt: raw.shirt || null,
     hairColor: raw.hairColor || null,

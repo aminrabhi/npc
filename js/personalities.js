@@ -320,6 +320,9 @@ export function loadProfiles(roster, { storage = safeStorage() } = {}) {
       }
       if (!authored.style && fromDisk.style) merged.style = fromDisk.style;
       if (fromDisk.social && !authored.social) merged.social = fromDisk.social;
+      // Equipment is saved in the same local studio record as the profile so a
+      // refresh keeps the item the player gave this villager.
+      if (!entry.heldItem && fromDisk.heldItem) entry.heldItem = fromDisk.heldItem;
     }
     entry.profile = merged;
     // fill in whatever is still missing so the studio always has something to edit
@@ -350,6 +353,7 @@ export function saveProfiles(roster, { storage = safeStorage() } = {}) {
       memories: profile.memories,
       style: profile.style,
       social: profile.social,
+      heldItem: entry.heldItem || null,
     };
   }
   try {

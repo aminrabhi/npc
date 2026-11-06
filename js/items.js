@@ -34,6 +34,12 @@ export function itemLabel(id) {
   return ITEMS[id] ? ITEMS[id].label : '';
 }
 
+// The loaded icon, for the studio picker. The sprite map is filled by loadItems()
+// before the studio is created; an unloaded item simply gets a blank thumbnail.
+export function itemImage(id) {
+  return sprites.get(id) || null;
+}
+
 // What is actually in the hand right now. A fighter is always holding a sword,
 // whatever they were carrying before the argument started.
 export function heldItemOf(npc) {

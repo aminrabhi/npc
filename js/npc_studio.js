@@ -9,6 +9,7 @@
 // "Export NPC code" hands the whole roster back as JSON so it can be baked in.
 
 import { BODIES, HAIRS, HANDS, SKIN_COLOURS, SHIRT_COLOURS, HAIR_COLOURS } from './npcs.js';
+import { ITEMS, itemImage, drawHeldItem } from './items.js';
 import { profileFor, STYLE_OPTIONS } from './personalities.js';
 
 const CELL_W = 96;
@@ -105,6 +106,8 @@ export function createNpcStudio({ canvas, state, village, assets, sheetsFor, onC
         <div class="np-opts" id="np-hair"></div>
         <div class="np-label">Hands <span class="np-hint">(what they carry)</span></div>
         <div class="np-opts" id="np-hand"></div>
+        <div class="np-label">Held item <span class="np-hint">(equipped in the hand)</span></div>
+        <div class="np-opts" id="np-held"></div>
         <div class="np-label">Skin colour <span class="np-hint">(body and hand)</span></div>
         <div class="np-colours" id="np-skin"></div>
         <div class="np-label">Shirt colour <span class="np-hint">(outline kept)</span></div>
@@ -303,7 +306,7 @@ export function createNpcStudio({ canvas, state, village, assets, sheetsFor, onC
     }
   }
 
-  function buildOptions(container, list, field, imageFor) {
+  function buildOptions(container, list, field, imageFor, { emptyId = null } = {}) {
     container.innerHTML = '';
     for (const option of list) {
       const btn = document.createElement('button');
@@ -318,7 +321,7 @@ export function createNpcStudio({ canvas, state, village, assets, sheetsFor, onC
       btn.addEventListener('click', () => {
         const entry = selected();
         if (!entry) return;
-        entry[field] = option.id;
+        entry[field] = option.id === emptyId ? null : option.id;
         markOptions();
         onChange();
         drawPreview(true);
@@ -336,6 +339,15 @@ export function createNpcStudio({ canvas, state, village, assets, sheetsFor, onC
     ]) {
       container.querySelectorAll('.np-opt').forEach((btn) => {
         btn.classList.toggle('is-on', !!entry && btn.dataset.id === entry[field]);
+      });
+    }
+
+    const held = panel.querySelector('#np-held');
+    if (held) {
+      const current = entry && entry.heldItem ? entry.heldItem : null;
+      held.querySelectorAll('.np-opt').forEach((btn) => {
+        const value = btn.dataset.id === 'none' ? null : btn.dataset.id;
+        btn.classList.toggle('is-on', value === current);
       });
     }
 
@@ -418,6 +430,13 @@ export function createNpcStudio({ canvas, state, village, assets, sheetsFor, onC
     HANDS,
     'hand',
     (option) => assets.hands.get(option.id)?.idle,
+  );
+  buildOptions(
+    panel.querySelector('#np-held'),
+    [{ id: 'none', label: 'Empty' }, ...Object.values(ITEMS)],
+    'heldItem',
+    (option) => option.id === 'none' ? null : itemImage(option.id),
+    { emptyId: 'none' },
   );
 
   buildColours(panel.querySelector('#np-skin'), 'skin', SKIN_COLOURS);
@@ -524,6 +543,14 @@ export function createNpcStudio({ canvas, state, village, assets, sheetsFor, onC
     const frames = walk ? 8 : 9;
     const frame = Math.floor(now / (walk ? 110 : 160)) % frames;
     previewCtx.drawImage(sheet, frame * CELL_W, 0, CELL_W, CELL_H, 0, 0, PREVIEW_W, PREVIEW_H);
+    // The portrait uses the same item overlay as the village, so switching from
+    // the tool strip to a sword or axe is visible here immediately.
+    drawHeldItem(previewCtx, {
+      heldItem: entry.heldItem || null,
+      sim: {},
+      animTime: now / 1000,
+      facing: 1,
+    }, PREVIEW_W / 2, 59);
   }
 
   function loop() {
@@ -603,6 +630,7 @@ export function createNpcStudio({ canvas, state, village, assets, sheetsFor, onC
       body: BODIES[0].id,
       hair: HAIRS[state.roster.length % HAIRS.length].id,
       hand: 'none',
+      heldItem: null,
       skin: null,
       shirt: null,
       hairColor: null,
@@ -837,6 +865,7 @@ export function createNpcStudio({ canvas, state, village, assets, sheetsFor, onC
       body: entry.body,
       hair: entry.hair,
       hand: entry.hand,
+      heldItem: entry.heldItem || null,
       skin: entry.skin || null,
       shirt: entry.shirt || null,
       hairColor: entry.hairColor || null,

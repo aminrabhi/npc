@@ -7,6 +7,7 @@
 // quickest way to see both villagers holding swords.
 
 import { ensureDock, focusPanel } from './dock.js';
+import { ITEMS, itemLabel } from './items.js';
 
 export function createScriptPanel({ roster = [], social, getNpcs }) {
   if (!social) return null;
@@ -46,7 +47,8 @@ export function createScriptPanel({ roster = [], social, getNpcs }) {
         <button type="button" class="ed-btn" id="script-fight">Force fight</button>
       </div>
       <div class="sim-row">
-        <button type="button" class="ed-btn" id="script-sword">Sword on A</button>
+        <select class="sim-select" id="script-item" aria-label="Item to equip"></select>
+        <button type="button" class="ed-btn" id="script-equip">Equip A</button>
         <button type="button" class="ed-btn" id="script-empty">Empty hands</button>
       </div>
       <div class="sim-note">Force fight ignores relationships. A real conversation only turns into a fight between villagers who already dislike each other.</div>
@@ -63,8 +65,16 @@ export function createScriptPanel({ roster = [], social, getNpcs }) {
   const stopBtn = section.querySelector('#script-stop');
   const argueBtn = section.querySelector('#script-argue');
   const fightBtn = section.querySelector('#script-fight');
-  const swordBtn = section.querySelector('#script-sword');
+  const itemSelect = section.querySelector('#script-item');
+  const equipBtn = section.querySelector('#script-equip');
   const emptyBtn = section.querySelector('#script-empty');
+
+  for (const item of [{ id: '', label: 'Empty hands' }, ...Object.values(ITEMS)]) {
+    const option = document.createElement('option');
+    option.value = item.id;
+    option.textContent = item.label;
+    itemSelect.appendChild(option);
+  }
 
   let filled = false;
 
@@ -165,15 +175,24 @@ export function createScriptPanel({ roster = [], social, getNpcs }) {
     note(result.ok ? 'fight started' : result.reason);
   });
 
-  swordBtn.addEventListener('click', () => {
+  equipBtn.addEventListener('click', () => {
     const a = npcById(selectA.value);
     if (!a) return;
-    a.heldItem = a.heldItem === 'sword' ? null : 'sword';
-    note(a.heldItem ? `${a.name} is holding a sword.` : `${a.name} has empty hands.`);
+    const id = itemSelect.value || null;
+    a.heldItem = id;
+    const entry = roster.find((item) => item.id === a.config.id);
+    // The studio is the persistent editor; this debug control still updates the
+    // roster entry so exporting or reopening the studio reflects the equipment.
+    if (entry) entry.heldItem = id;
+    note(id ? `${a.name} is holding ${itemLabel(id)}.` : `${a.name} has empty hands.`);
   });
 
   emptyBtn.addEventListener('click', () => {
-    for (const npc of getNpcs()) npc.heldItem = null;
+    for (const npc of getNpcs()) {
+      npc.heldItem = null;
+      const entry = roster.find((item) => item.id === npc.config.id);
+      if (entry) entry.heldItem = null;
+    }
     note('everyone has empty hands.');
   });
 
