@@ -342,6 +342,8 @@ export function createConvLogs({
         <span>${session.status === 'active' ? 'live' : `lasted ${duration}`}</span>
         <span>${session.messageCount} / ${session.target} messages</span>
         ${session.closeReason ? `<span>reason ${session.closeReason}</span>` : ''}
+        ${session.mood === 'tense' ? '<span class="cl-tag cl-err">tense</span>' : ''}
+        ${session.topic ? `<span>topic: ${escapeHtml(session.topic)}</span>` : ''}
         <span>${savedAt ? 'saved to Supabase' : 'local only · not saved'}</span>
       </div>
       ${transcriptBlock(session.messages)}

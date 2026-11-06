@@ -23,6 +23,7 @@ import { createRelationships } from './relationships.js';
 import { createMemories } from './memories.js';
 import { createConversations } from './conversation.js';
 import { createConvLogs } from './conv_logs.js';
+import { createRelPanel } from './rel_panel.js';
 
 // Grass marks the tile grid and nothing else, so the area you can place tiles on is
 // obvious in any window shape. Everything outside it is painted in this colour.
@@ -372,12 +373,21 @@ async function init() {
     ai: state.ai,
     roster: state.roster,
   });
+
+  // The third dock panel: the social graph itself, so the numbers behind the
+  // conversations are readable without opening the browser console.
+  state.relPanel = createRelPanel({
+    relationships: state.relationships,
+    roster: state.roster,
+    conversations: state.conversations,
+  });
   window.__conv = state.conversations;
   window.__rel = state.relationships;
   window.__mem = state.memories;
   window.__news = state.news;
   window.__ai = state.ai;
   window.__logs = state.convLogs;
+  window.__relPanel = state.relPanel;
   window.__profiles = () => state.roster.map((entry) => profileFor(entry));
   window.__npcs = () => state.roster.map((config) => ({ ...config, home: [...config.home] }));
 

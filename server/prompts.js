@@ -107,6 +107,8 @@ export function buildMessages({
   news = [],
   recentLines = [],
   relationshipChange = null,
+  topic = '',
+  mood = 'calm',
 }) {
   const me = normaliseProfile(speaker);
   const them = normaliseProfile(listener);
@@ -121,7 +123,11 @@ export function buildMessages({
     me.dislikes ? `Dislikes: ${me.dislikes}.` : '',
     me.tendencies ? `Habits: ${me.tendencies}.` : '',
     me.style ? `Speaking style: ${me.style}.` : '',
-    `Keep it to one or two short sentences, at most ${MAX_WORDS} words and under ${LINE_BUDGET.chars} characters in total: a speech bubble holds two lines of about ${LINE_BUDGET.lineChars} characters. If a thought needs more room, reword it shorter. Never stop mid-sentence, never trail off with an ellipsis. Ordinary village speech.`,
+    `Keep it to one or two short sentences, at most ${MAX_WORDS} words and under ${LINE_BUDGET.chars} characters in total: a speech bubble holds two lines of about ${LINE_BUDGET.lineChars} characters. If a thought needs more room, reword it shorter. Never stop mid-sentence, never trail off with an ellipsis. Plain, everyday speech.`,
+    'Never talk about the village itself: no village gossip, no news from round here, no talk of the square, the neighbours or how things are done in this place. Talk about the wider world instead: the city, money, food, music, work, family, the past, dreams, sport, something strange you saw. Anything real.',
+    mood === 'tense'
+      ? 'You are already annoyed with them before they speak. Be short, sharp and unfair. Pick at something they did. Do not soften it, and do not apologise unless you mean it.'
+      : '',
     'If you have two things to say, put the second on a new line. A villager never writes a paragraph.',
     'No stage directions, no actions in brackets, asterisks or angle brackets, no emojis, no quotation marks, no narration.',
     'Never write your own name or a label like "Name:" before your words.',
@@ -133,6 +139,10 @@ export function buildMessages({
   const scene = [];
   scene.push(`You are talking with ${them.name}.`);
   scene.push(relationshipLine(me, them.name, relationship));
+
+  if (topic && mode !== 'closing') {
+    scene.push(`If the talk needs a subject, bring up ${topic}. It is your own business, not village news.`);
+  }
 
   if (relationshipChange) {
     const kind = asString(relationshipChange.kind, 20);
@@ -159,11 +169,17 @@ export function buildMessages({
   if (historyText) scene.push(`Conversation so far:\n${historyText}`);
 
   if (mode === 'opening') {
-    scene.push(`You have just walked up to ${them.name}. Say the first thing that comes to mind, in character.`);
+    scene.push(mood === 'tense'
+      ? `You have just walked up to ${them.name} and you are already irritated. Open by picking at something they did or said.`
+      : `You have just walked up to ${them.name}. Say the first thing that comes to mind, in character.`);
   } else if (mode === 'closing') {
-    scene.push(`This is the last thing you will say before you both get back to your day: a short goodbye, no new topic.`);
+    scene.push(mood === 'tense'
+      ? `This is the last thing you will say to ${them.name}: end it coldly. No fond goodbye.`
+      : `This is the last thing you will say before you both get back to your day: a short goodbye, no new topic.`);
   } else {
-    scene.push(`Reply to ${them.name}'s last line. Respond to what they actually said, with something they do not already know. If the point has been made already, say a short goodbye and nothing else.`);
+    scene.push(mood === 'tense'
+      ? `Reply to ${them.name}'s last line. You are losing patience: push back, disagree, be blunt. Do not smooth it over.`
+      : `Reply to ${them.name}'s last line. Respond to what they actually said, with something they do not already know. If the point has been made already, say a short goodbye and nothing else.`);
   }
 
   scene.push(`Write only ${me.name}'s line: one or two short sentences, at most ${MAX_WORDS} words and under ${LINE_BUDGET.chars} characters, two lines at most. Tighten the wording until it fits.`);

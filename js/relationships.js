@@ -330,7 +330,7 @@ export function createRelationships({
       + (newsUsed ? 0.4 : 0)
       + Math.min(0.8, length * 0.08)
       - friction * 0.7
-      - (disagreement ? 3.2 : 0);
+      - (disagreement ? 4.4 : 0);
 
     const changes = [];
 
@@ -349,7 +349,7 @@ export function createRelationships({
       record.trust = clamp(record.trust + (tone > 0.15 ? 0.035 : tone < -0.15 ? -0.05 : 0.012), 0);
       record.friendliness = clamp(record.friendliness + Math.max(0, tone) * 0.05, 0);
       record.affection = clamp(record.affection + Math.max(0, tone) * 0.04, 0);
-      record.dislike = clamp(record.dislike + (tone < -0.2 ? 0.06 : disagreement ? 0.09 : -0.012), 0);
+      record.dislike = clamp(record.dislike + (tone < -0.2 ? 0.06 : disagreement ? 0.12 : -0.012), 0);
       record.lastInteraction = new Date().toISOString();
       touch(record);
 

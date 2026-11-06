@@ -283,6 +283,71 @@ html, body {
 .sim-watching { color: #a8d8ff; }
 .sim-where { color: rgba(244, 239, 226, 0.4); }
 
+/* Relationships panel: one row per directed opinion, with a bar showing warmth
+   either side of neutral. */
+.rel-legend {
+  margin: 6px 0 2px;
+  font-size: 9px;
+  color: rgba(244, 239, 226, 0.45);
+}
+
+.rel-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.rel-row {
+  padding: 4px 6px;
+  background: rgba(0, 0, 0, 0.28);
+  border-left: 2px solid rgba(244, 239, 226, 0.16);
+}
+
+.rel-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10px;
+}
+
+.rel-cat {
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.cat-warm { color: #9ff0c8; }
+.cat-cool { color: #a8d8ff; }
+.cat-cold { color: #ff9f9f; }
+
+.rel-meta {
+  font-size: 9px;
+  color: rgba(244, 239, 226, 0.5);
+}
+
+.rel-bar {
+  position: relative;
+  height: 3px;
+  margin-top: 3px;
+  background: rgba(244, 239, 226, 0.12);
+}
+
+.rel-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+.rel-fill.pos { background: #9ff0c8; }
+.rel-fill.neg { background: #ff9f9f; }
+
+.rel-empty {
+  font-size: 9px;
+  color: rgba(244, 239, 226, 0.45);
+}
+
 /* Dropdowns in the NPC studio reuse the text-input look. */
 .np-select {
   display: block;

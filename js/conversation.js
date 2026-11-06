@@ -16,6 +16,42 @@ import { offlineLine } from './ai.js';
 // after a couple of turns; one with a real thread to pull can run to eight.
 const MIN_TURNS = 2;
 const MAX_TURNS = 8;
+
+// What villagers actually talk about. The village itself is deliberately absent: ten
+// people discussing the square every day is what made every conversation sound alike.
+// One of these is drawn per conversation and offered to the model as a subject.
+export const TOPICS = [
+  'the last film you watched and why it stuck with you',
+  'a song from years ago you cannot get out of your head',
+  'the price of everything and who is getting rich',
+  'a meal someone used to cook for you',
+  'the strangest dream you had this week',
+  'the sea and whether you would ever live by it',
+  'a dog or cat that follows you about',
+  'money you lent someone and never got back',
+  'whether it is worth being famous',
+  'an old scar and the story behind it',
+  'what you would do with a free month',
+  'a job you nearly took and regret',
+  'the moon and how it looks bigger some nights',
+  'a bet you lost',
+  'the worst haircut you ever had',
+  'something you heard on the radio that you cannot explain',
+  'a person you miss and have never said so out loud',
+  'a machine in the city that talks back to you',
+  'a lie you told that got out of hand',
+  'a door that only seems to open at night',
+  'the word home and what it means to you',
+  'why cats stare at nothing',
+  'the fastest you have ever run',
+  'a letter you never sent',
+  'whether people can really change',
+  'the best thing you have ever eaten',
+  'a town you passed through once and never forgot',
+  'what you would say to someone who is gone',
+  'a habit you cannot break',
+  'the noise the city makes at three in the morning',
+];
 const APPROACH_LIMIT = 12; // seconds the pair may take to reach each other
 const SESSION_LIMIT = 95; // hard cap, so a stalled request cannot freeze a villager
 const MAX_FAILURES = 3; // consecutive model failures before the chat is closed
@@ -84,6 +120,11 @@ function isFarewell(text) {
   return value.length > 0 && value.length <= 140 && FAREWELL.test(value);
 }
 
+// Getting properly cross is part of life, not a fault in the simulation. Two sharp lines
+// in a row is a row rather than a conversation, and the relationship records pay for it
+// when the session is scored.
+const ANGER = /\b(shut up|idiot|stupid|hate you|liar|pathetic|nonsense|rubbish|fool|get lost|grow up|you never|you always|useless|keep your mouth shut)\b/i;
+
 export function createConversations({
   roster = [],
   ai,
@@ -109,6 +150,30 @@ export function createConversations({
     lastError: null,
   };
   let counter = 0;
+  const recentTopics = [];
+
+  // Never the same subject twice in a row, so a pair that meets often still has
+  // something new to bring up.
+  function pickTopic() {
+    const pool = TOPICS.filter((candidate) => !recentTopics.includes(candidate));
+    const topic = pool[Math.floor(rng() * pool.length)] || TOPICS[0];
+    recentTopics.push(topic);
+    if (recentTopics.length > 8) recentTopics.shift();
+    return topic;
+  }
+
+  // Some conversations are simply not going to go well, and that is a feature: a
+  // village where nobody ever falls out is a village with nothing at stake. The chance
+  // is real for everyone and rises with old dislike and coldness between the pair.
+  function tensionChance(aId, bId) {
+    if (!relationships) return 0.3;
+    const ab = relationships.record(aId, bId);
+    const ba = relationships.record(bId, aId);
+    const dislike = ((Number(ab.dislike) || 0) + (Number(ba.dislike) || 0)) / 2;
+    const warmth = ((Number(ab.score) || 0) + (Number(ba.score) || 0)) / 200;
+    const cold = warmth < 0 ? -warmth : 0;
+    return Math.min(0.75, Math.max(0.18, 0.3 + dislike * 0.4 + cold * 0.25));
+  }
 
   const entryFor = (npc) => {
     const id = npc && npc.config ? npc.config.id : null;
@@ -149,6 +214,10 @@ export function createConversations({
 
     counter += 1;
     const target = MIN_TURNS + Math.floor(rng() * (MAX_TURNS - MIN_TURNS + 1));
+    // Every chat gets its own subject, so two villagers who talk every day do not
+    // circle the same ground; some also start already annoyed with each other.
+    const topic = pickTopic();
+    const mood = rng() < tensionChance(a.id, b.id) ? 'tense' : 'calm';
 
     const profileA = profileFor(a);
     const profileB = profileFor(b);
@@ -168,6 +237,8 @@ export function createConversations({
       startedAt: new Date().toISOString(),
       endedAt: null,
       target,
+      topic,
+      mood,
       status: 'active',
       messages: [],
       errors: [],
@@ -241,6 +312,8 @@ export function createConversations({
     return {
       conversationId: session.id,
       mode,
+      topic: session.topic || '',
+      mood: session.mood || 'calm',
       messageCount: turns(session),
       speaker: speakerCtx,
       listener: contextFor(listenerEntry),
@@ -319,6 +392,14 @@ export function createConversations({
         finish(session, 'complete', 'said_goodbye');
         return;
       }
+      // Two sharp lines in a row: they have had the argument they were going to have,
+      // so it ends there rather than smouldering for another four turns.
+      if (session.mood === 'tense' && mode !== 'closing' && turns(session) >= 2
+        && !session.followUps.length
+        && session.messages.slice(-2).every((message) => ANGER.test(message.text))) {
+        finish(session, 'complete', 'argument');
+        return;
+      }
       if (mode === 'opening') {
         const list = recentOpeners.get(speakerId) || [];
         list.push(result.text);
@@ -376,7 +457,8 @@ export function createConversations({
     if (realExchange) {
       const profileA = profileFor(entryFor(session.npcA) || {});
       const profileB = profileFor(entryFor(session.npcB) || {});
-      const disagreement = session.messages.some((message) => /\b(shut up|idiot|stupid|hate you|liar|pathetic)\b/i.test(message.text));
+      const disagreement = session.mood === 'tense'
+        || session.messages.some((message) => ANGER.test(message.text));
       const result = relationships ? relationships.applyConversation(session, {
         profileA,
         profileB,
@@ -502,6 +584,8 @@ export function createConversations({
       startedAt: session.startedAt,
       endedAt: session.endedAt,
       target: session.target,
+      topic: session.topic || null,
+      mood: session.mood || 'calm',
       messages: session.messages.map((message) => ({ ...message })),
       messageCount: session.messages.length,
       relationshipChanges: session.relationshipChanges,

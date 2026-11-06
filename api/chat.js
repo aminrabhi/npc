@@ -14,6 +14,9 @@ import { buildMessages } from '../server/prompts.js';
 import { config } from '../server/env.js';
 
 const MODES = new Set(['opening', 'reply', 'closing']);
+// "tense" is a conversation the client decided starts badly: the prompt pushes for
+// friction instead of small talk, and the relationship pays for it at the end.
+const MOODS = new Set(['calm', 'tense']);
 const MAX_MESSAGES = 12;
 
 // Enough for a 10-message conversation plus a closing line, comfortably under the
@@ -62,6 +65,11 @@ function validate(body) {
 
   const recentLines = asArray(body.recentLines, 4).map((line) => asString(line, 120)).filter(Boolean);
 
+  // A topic keeps villagers off the same patch of ground; it is a subject, never an
+  // instruction the model is free to replace with a new system rule.
+  const topic = asString(body.topic, 70);
+  const mood = MOODS.has(asString(body.mood, 8)) ? asString(body.mood, 8) : 'calm';
+
   const relationship = body.relationship && typeof body.relationship === 'object'
     ? {
       score: asNumber(body.relationship.score, 0, -100, 100),
@@ -91,6 +99,8 @@ function validate(body) {
     recentLines,
     relationship,
     relationshipChange,
+    topic,
+    mood,
   };
 }
 
@@ -125,7 +135,7 @@ export default route(async (req, res) => {
   try {
     const result = await chatCompletion({
       messages,
-      temperature: TEMPERATURE[body.mode],
+      temperature: Math.min(1, TEMPERATURE[body.mode] + (body.mood === 'tense' ? 0.05 : 0)),
       maxTokens: 96,
       timeoutMs: 13_500,
     });
