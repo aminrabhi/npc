@@ -10,8 +10,10 @@
 // message limit as something it can change.
 
 import { contextFor, profileFor } from './personalities.js';
+import { opinionFor } from './cast.js';
 import { createOfflineDialogue } from './offline_dialogue.js';
 import { createDialogueCache } from './dialogue_cache.js';
+import { createSocialContext } from './social_context.js';
 
 // A chat is never padded to a length. Two villagers with nothing new to say part ways
 // after a couple of turns; one with a real thread to pull can run to eight.
@@ -147,6 +149,9 @@ export function createConversations({
   // here when the village does not hand its own in.
   offline = null,
   cache = null,
+  // Optional override for tests. In the village this is created from the roster,
+  // relationships and memories above.
+  socialContext = null,
   // Lessons from the player: subjects a villager has been punished for, and habits
   // they have been praised for. Absent in tests that only exercise the dialogue.
   lessons = null,
@@ -178,6 +183,7 @@ export function createConversations({
   // fail, so a conversation never depends on Groq being up.
   const dialogue = offline || createOfflineDialogue({ rng });
   const dialogueCache = cache || createDialogueCache();
+  const socialFocus = socialContext || createSocialContext({ roster, relationships, memories, rng });
   const sources = { groq: 0, cached: 0, offline: 0 };
 
   function environmentNow() {
@@ -282,6 +288,106 @@ export function createConversations({
     return Math.min(0.75, Math.max(0.18, 0.3 + dislike * 0.4 + cold * 0.25));
   }
 
+  // Gossip lands harder when it matches the listener's existing suspicion. The
+  // relationship store applies the actual delta; this is only the direction and
+  // strength the conversation carried.
+  function socialTone(seed) {
+    if (!seed) return 0;
+    if (seed.angle === 'defend') return 0.7;
+    if (seed.angle === 'secret') return 0.55;
+    if (seed.angle === 'criticize' || seed.angle === 'grudge') return -0.9;
+    if (seed.angle === 'rumor' || seed.angle === 'rumour') return seed.kind === 'fact' ? -0.35 : -0.65;
+    if (seed.angle === 'envy') return -0.25;
+    if (seed.angle === 'question') return -0.2;
+    return 0.05;
+  }
+
+  function socialSeedEngaged(session, seed) {
+    if (!seed || !seed.subjectName) return false;
+    const name = String(seed.subjectName).toLowerCase();
+    const claim = String(seed.claim || '').toLowerCase().slice(0, 24);
+    return (session.messages || []).some((message) => {
+      const text = String(message.text || '').toLowerCase();
+      return text.includes(name) || (claim.length >= 8 && text.includes(claim));
+    });
+  }
+
+  // Most conversations stay on one person. Some drift when someone brings up a
+  // second name, which is exactly how real gossip changes direction halfway through.
+  function maybePivot(session, speakerId, listenerId) {
+    if (!socialFocus || !session.social || session.humanId || session.mood === 'tense') return;
+    if (session.socialPivoted || turns(session) < 3 || modeForTurn(session) === 'closing') return;
+    if (rng() > 0.34) return;
+    const seed = socialFocus.next({
+      speakerId,
+      listenerId,
+      participantIds: session.participants.map((participant) => participant.id),
+    });
+    if (!seed || seed.id === session.social.id) return;
+    session.social = seed;
+    session.socialSeeds.push(seed);
+    session.topic = seed.title;
+    session.socialPivoted = true;
+  }
+
+  function modeForTurn(session) {
+    const turn = turns(session);
+    if (turn === 0) return 'opening';
+    if (turn >= session.target - 1) return 'closing';
+    return 'reply';
+  }
+
+  // A social seed belongs to the person who raised it. When the other villager
+  // answers, the subject stays on the table but the angle has to become their own:
+  // they might agree, defend the absent person, ask a question or refuse to engage.
+  // Without this, every reply was still written from the opener's point of view.
+  function socialForTurn(seed, speakerId, listenerId) {
+    if (!seed) return null;
+    if (!speakerId || seed.speakerId === speakerId) return seed;
+    const speaker = roster.find((candidate) => candidate && candidate.id === speakerId) || null;
+    const listener = roster.find((candidate) => candidate && candidate.id === listenerId) || null;
+    const originalSpeaker = nameFor(seed.speakerId);
+    const subjectName = seed.subjectName || nameFor(seed.subjectId);
+    const own = relationships && relationships.record
+      ? relationships.record(speakerId, seed.subjectId)
+      : null;
+    const opinion = opinionFor(speakerId, seed.subjectId);
+    const currentNote = opinion ? opinion.note : (own && own.notes) || '';
+    const isSecretReply = seed.angle === 'secret';
+    const angle = isSecretReply ? 'question' : 'reply';
+    const category = isSecretReply ? 'question' : 'gossip';
+    const instruction = isSecretReply
+      ? `${originalSpeaker} has just told you something private about themselves. Respond like a person who was trusted: be careful with it, do not repeat the secret back as gossip, and do not turn it into a speech. Ask one small question or say something plain.`
+      : `${originalSpeaker} just brought up ${subjectName}. The subject is already on the table. Respond from your own view of ${subjectName}; agree, push back, ask what they mean, or change the subject if you have had enough. Do not repeat their claim as if it were yours.`;
+    return {
+      ...seed,
+      speakerId,
+      listenerId,
+      angle,
+      category,
+      sourceId: null,
+      sourceName: '',
+      kind: 'opinion',
+      claim: isSecretReply ? seed.claim : (currentNote || seed.claim),
+      confidence: 0.5,
+      instruction,
+      speakerStance: own ? own.category : 'stranger',
+      listenerStance: relationshipForTurn(seed.speakerId, seed.subjectId),
+      orientation: 'reply',
+      raisedBy: originalSpeaker,
+      listenerName: listener ? listener.name : nameFor(listenerId),
+      speakerName: speaker ? speaker.name : nameFor(speakerId),
+    };
+  }
+
+  function relationshipForTurn(speakerId, subjectId) {
+    try {
+      return relationships && relationships.record ? relationships.record(speakerId, subjectId).category : 'stranger';
+    } catch {
+      return 'stranger';
+    }
+  }
+
   const entryFor = (npc) => {
     const id = npc && npc.config ? npc.config.id : null;
     return roster.find((entry) => entry.id === id) || null;
@@ -321,9 +427,14 @@ export function createConversations({
 
     counter += 1;
     const target = MIN_TURNS + Math.floor(rng() * (MAX_TURNS - MIN_TURNS + 1));
-    // Every chat gets its own subject, so two villagers who talk every day do not
-    // circle the same ground; some also start already annoyed with each other.
-    const topic = pickTopic([a.id, b.id]);
+    // Every chat starts with a person, not an abstract subject. The fallback topic is
+    // only used when there is nobody else in the village to talk about.
+    const socialSeed = socialFocus.next({
+      speakerId: a.id,
+      listenerId: b.id,
+      participantIds: [a.id, b.id],
+    });
+    const topic = socialSeed ? socialSeed.title : pickTopic([a.id, b.id]);
     const mood = rng() < tensionChance(a.id, b.id) ? 'tense' : 'calm';
 
     const profileA = profileFor(a);
@@ -349,6 +460,9 @@ export function createConversations({
       target,
       topic,
       mood,
+      social: socialSeed,
+      socialSeeds: socialSeed ? [socialSeed] : [],
+      socialPivoted: false,
       status: 'active',
       messages: [],
       errors: [],
@@ -592,6 +706,7 @@ export function createConversations({
       memories: memoryList,
       relationship: relationships ? relationships.record(speakerEntry.id, listenerEntry.id) : null,
       relationshipChange: session.changeNote || null,
+      social: socialForTurn(session.social, speakerId, listenerEntry.id),
       news: session.news.map((item) => ({
         headline: item.headline,
         summary: item.summary,
@@ -606,6 +721,8 @@ export function createConversations({
     const turn = turns(session);
     const speakerNow = speakerAt(session, turn);
     const speakerId = speakerNow ? speakerNow.id : session.participants[0].id;
+    const listenerNow = listenerAfter(session, speakerId);
+    if (listenerNow) maybePivot(session, speakerId, listenerNow.id);
     // The player writes their own lines. Never send a request that would put words
     // in their mouth; the UI will hand the turn back when a line is submitted.
     if (session.humanId && speakerId === session.humanId) {
@@ -631,6 +748,7 @@ export function createConversations({
     const listenerEntry = listener ? entryFor(npcForId(session, listener.id)) : null;
     const profile = profileFor(speakerEntry || {});
     const otherProfile = profileFor(listenerEntry || {});
+    const turnSocial = socialForTurn(session.social, speakerId, listenerEntry ? listenerEntry.id : null);
     const env = environmentNow();
 
     let parts = [];
@@ -658,15 +776,19 @@ export function createConversations({
         // spoken as another message after this one instead of being cut off.
         parts = [result.text, ...(Array.isArray(result.extra) ? result.extra : [])].filter(Boolean);
         // Keep the good lines: when the model goes away, the cache is the next rung.
-        dialogueCache.remember({
-          text: parts[0],
-          mode,
-          mood: session.mood,
-          topic: session.topic,
-          weatherKey: env.weather ? env.weather.key : '',
-          timeOfDay: env.timeOfDay,
-          category: mode,
-        });
+        // A social line is tied to particular people and a particular claim, so it is
+        // never safe to reuse in another conversation.
+        if (!session.social) {
+          dialogueCache.remember({
+            text: parts[0],
+            mode,
+            mood: session.mood,
+            topic: session.topic,
+            weatherKey: env.weather ? env.weather.key : '',
+            timeOfDay: env.timeOfDay,
+            category: mode,
+          });
+        }
       } else if (result.error) {
         session.errors.push({
           at: new Date().toISOString(),
@@ -682,8 +804,10 @@ export function createConversations({
 
     session.pending = false;
 
-    // 2. A line the model produced before for a comparable moment.
-    if (!parts.length && session.mood !== 'tense') {
+    // 2. A line the model produced before for a comparable moment. Social lines are
+    // never taken from the cache: a line about one person cannot be dropped into a
+    // conversation about another.
+    if (!parts.length && session.mood !== 'tense' && !session.social) {
       const cached = dialogueCache.take({
         mode,
         mood: session.mood,
@@ -713,6 +837,7 @@ export function createConversations({
         timeOfDay: env.timeOfDay,
         news: session.news[0] || null,
         topic: session.topic,
+        social: turnSocial,
         activity: activityOf(npcForId(session, speakerId)),
         recentLines: session.messages.map((message) => message.text).slice(-6),
       });
@@ -858,6 +983,9 @@ export function createConversations({
               toneCount += 1;
             }
           }
+          const pairSeeds = (session.socialSeeds || []).filter((seed) => seed
+            && [p1.id, p2.id].includes(seed.speakerId)
+            && [p1.id, p2.id].includes(seed.listenerId));
           if (memories) {
             const created = memories.consider(pairSession, {
               profileA,
@@ -865,6 +993,7 @@ export function createConversations({
               relationshipChanges: result ? result.changes : [],
               news: session.news[0] || null,
               disagreement,
+              socialSeeds: pairSeeds,
             }) || [];
             for (const memory of created) {
               if (!memoriesMade.some((existing) => existing.id === memory.id)) memoriesMade.push(memory);
@@ -872,6 +1001,28 @@ export function createConversations({
           }
         }
       }
+
+      // A rumour changes the listener's view of the person being discussed, not the
+      // view of the person who told it. This is the part that makes gossip have a
+      // consequence after the conversation is over.
+      if (relationships.applySocialClaim) {
+        for (const seed of session.socialSeeds || []) {
+          if (!seed || !seed.listenerId || !seed.subjectId) continue;
+          if (!people.some((person) => person.id === seed.listenerId)) continue;
+          if (!people.some((person) => person.id === seed.speakerId)) continue;
+          if (!socialSeedEngaged(session, seed)) continue;
+          const change = relationships.applySocialClaim({
+            listenerId: seed.listenerId,
+            subjectId: seed.subjectId,
+            sourceId: seed.sourceNpcId || seed.speakerId,
+            kind: seed.kind || 'claim',
+            tone: socialTone(seed),
+            confidence: seed.confidence || 0.5,
+          });
+          if (change) changes.push(change);
+        }
+      }
+
       session.relationshipChanges = changes;
       session.tone = toneCount ? toneSum / toneCount : 0;
       session.memories = memoriesMade;
@@ -1005,6 +1156,8 @@ export function createConversations({
       target: session.target,
       topic: session.topic || null,
       mood: session.mood || 'calm',
+      social: session.social ? { ...session.social } : null,
+      socialSeeds: (session.socialSeeds || []).map((seed) => ({ ...seed })),
       messages: session.messages.map((message) => ({ ...message })),
       messageCount: session.messages.length,
       relationshipChanges: session.relationshipChanges,

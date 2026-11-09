@@ -17,6 +17,13 @@ const MODES = new Set(['opening', 'reply', 'closing']);
 // "tense" is a conversation the client decided starts badly: the prompt pushes for
 // friction instead of small talk, and the relationship pays for it at the end.
 const MOODS = new Set(['calm', 'tense']);
+const SOCIAL_ANGLES = new Set([
+  'criticize', 'defend', 'question', 'rumor', 'rumour', 'secret', 'grudge',
+  'envy', 'observation', 'compare', 'reply',
+]);
+const SOCIAL_KINDS = new Set([
+  'opinion', 'rumor', 'grudge', 'secret', 'fact', 'witnessed', 'gossip', 'claim',
+]);
 const MAX_MESSAGES = 12;
 
 // Enough for a 10-message conversation plus a closing line, comfortably under the
@@ -83,6 +90,30 @@ function validate(body) {
   const lessonNote = asString(body.lessonNote, 180);
   const mood = MOODS.has(asString(body.mood, 8)) ? asString(body.mood, 8) : 'calm';
 
+  // Social context is optional, but when present it must be structured. The prompt
+  // reconstructs the situation from these fields and never uses a client-supplied
+  // instruction, so gossip cannot become a general-purpose system message.
+  const rawSocial = body.social && typeof body.social === 'object' ? body.social : null;
+  let social = null;
+  if (rawSocial) {
+    const subjectName = asString(rawSocial.subjectName, 24);
+    if (subjectName) {
+      const angle = asString(rawSocial.angle, 20).toLowerCase();
+      const kind = asString(rawSocial.kind, 20).toLowerCase();
+      social = {
+        subjectId: asString(rawSocial.subjectId, 40) || null,
+        subjectName,
+        claim: asString(rawSocial.claim, 180),
+        sourceName: asString(rawSocial.sourceName, 24),
+        raisedBy: asString(rawSocial.raisedBy, 24),
+        angle: SOCIAL_ANGLES.has(angle) ? angle : 'observation',
+        kind: SOCIAL_KINDS.has(kind) ? kind : 'opinion',
+        confidence: asNumber(rawSocial.confidence, 0.5, 0, 1),
+        orientation: rawSocial.orientation === 'reply' ? 'reply' : 'opening',
+      };
+    }
+  }
+
   const relationship = body.relationship && typeof body.relationship === 'object'
     ? {
       score: asNumber(body.relationship.score, 0, -100, 100),
@@ -115,6 +146,7 @@ function validate(body) {
     topic,
     lessonNote,
     mood,
+    social,
   };
 }
 

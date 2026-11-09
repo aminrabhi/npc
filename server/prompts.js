@@ -35,6 +35,11 @@ export function normaliseProfile(raw) {
   return {
     name: asString(p.name, 24) || 'Villager',
     personality: list(p.personality, 8, 24),
+    motivation: asString(p.motivation, 160),
+    values: list(p.values, 8, 28),
+    fears: list(p.fears, 8, 28),
+    secret: asString(p.secret, 180),
+    voice: asString(p.voice, 160),
     backstory: asString(p.backstory, PROMPT_LIMITS.backstory),
     notes: asString(p.notes, PROMPT_LIMITS.notes),
     interests: list(p.interests),
@@ -99,6 +104,59 @@ function transcript(history) {
   return rows.join('\n');
 }
 
+// The social layer is structured on purpose: the server reconstructs the situation
+// from names, a claim, a source and a confidence instead of trusting free-form text
+// from the client. That keeps a gossip line from turning into an instruction.
+function socialScene(social) {
+  const s = social && typeof social === 'object' ? social : null;
+  if (!s) return [];
+  const subject = asString(s.subjectName, 24);
+  if (!subject) return [];
+  const claim = asString(s.claim, 180);
+  const source = asString(s.sourceName, 24);
+  const angle = asString(s.angle, 20) || 'observation';
+  const kind = asString(s.kind, 20) || 'opinion';
+  const raisedBy = asString(s.raisedBy, 24);
+  const confidence = asNumber(s.confidence, 0.5, 0, 1);
+  const lines = [
+    `${subject} is not part of this conversation. You are talking about them, not to them. Do not address them or write their reply.`,
+  ];
+
+  if (claim) lines.push(`What is on your mind about ${subject}: "${claim}"`);
+  if (source && source !== subject) {
+    lines.push(`You heard that from ${source}. You can say where it came from, but you cannot know for certain that it is true.`);
+  }
+  if (kind === 'secret' || angle === 'secret') {
+    lines.push('This is a private thing you are choosing to trust them with. Do not announce it as gossip, do not explain why you picked now, and do not repeat it back as a joke.');
+  } else if (kind === 'rumor' || angle === 'rumor' || angle === 'rumour') {
+    lines.push('This is only what you heard. You were not there. Someone else may have a reason to lie about it.');
+  } else if (kind === 'fact' || kind === 'witnessed') {
+    lines.push('You saw this yourself. It is a fact to you, even if the other person doubts it.');
+  } else {
+    lines.push('This is your opinion, not a fact you can prove. It can be unfair, and they are allowed to disagree.');
+  }
+  if (!Number.isFinite(confidence) || confidence < 0.55) {
+    lines.push('You are not completely sure. Say it like someone testing the thought, not someone delivering a verdict.');
+  }
+  if (s.orientation === 'reply') {
+    lines.push(`You have just heard what ${raisedBy || 'they'} thinks about ${subject}. Answer from your own view of ${subject}: agree, push back, ask what they mean, or refuse to keep going with it.`);
+  } else if (angle === 'defend') {
+    lines.push(`You think ${subject} is being treated unfairly. Defend them without making a speech.`);
+  } else if (angle === 'question') {
+    lines.push(`Ask what the other person really thinks of ${subject}. Do it sideways, like ordinary conversation.`);
+  } else if (angle === 'grudge') {
+    lines.push(`You have not let this go. Let it leak into the line instead of announcing the grudge.`);
+  } else if (angle === 'envy') {
+    lines.push(`You would not admit to envy. It should sound like a compliment with a sharp edge.`);
+  } else if (angle === 'secret') {
+    lines.push('Say it quietly. It is not a performance.');
+  } else {
+    lines.push(`Bring ${subject} up as a small, specific observation, not a summary of their character.`);
+  }
+  lines.push('Do not turn this into an explanation of who likes whom or how the place works. No narrator, no moral, no tidy resolution.');
+  return lines;
+}
+
 export function buildMessages({
   mode = 'reply',
   speaker,
@@ -112,6 +170,7 @@ export function buildMessages({
   topic = '',
   mood = 'calm',
   lessonNote = '',
+  social = null,
 }) {
   const me = normaliseProfile(speaker);
   const them = normaliseProfile(listener);
@@ -120,7 +179,15 @@ export function buildMessages({
     `You are ${me.name}. Write only ${me.name}'s spoken words.`,
     'Only write your own words. Never write another person\'s line, rename anyone, or claim to be someone else. The transcript labels every line; use those labels to keep the speakers straight.',
     'Talk about your own life and the wider world: work, food, music, family, memories, plans, the weather, something you noticed or wondered about. Keep it personal and specific, not a description of where you live.',
+    'You are also a social person: you have opinions about the people you know, old arguments, favours, suspicions and things you have heard. Talking about other people is normal. Do not explain those relationships from the outside; just speak from your own corner of them.',
+    'You do not know everything. Separate what you saw, what someone told you and what you only suspect. You may be wrong, and you may repeat something unfair.',
+    'People can disagree, dodge a question, change the subject or end a conversation badly. Do not make every chat neat or wise.',
     me.personality ? `Personality: ${me.personality}.` : '',
+    me.motivation ? `What you want: ${me.motivation}` : '',
+    me.values ? `What you value: ${me.values}.` : '',
+    me.fears ? `What you are afraid of: ${me.fears}.` : '',
+    me.secret ? `A private thing you do not volunteer: ${me.secret}. Never announce it. It can surface only when trust and the conversation make it safe.` : '',
+    me.voice ? `How you sound: ${me.voice}` : '',
     me.backstory ? `Backstory: ${me.backstory}` : '',
     me.notes ? `Quirks: ${me.notes}` : '',
     me.interests ? `Interests: ${me.interests}.` : '',
@@ -160,9 +227,12 @@ export function buildMessages({
   }
   scene.push(relationshipLine(me, them.name, relationship));
 
-  if (topic && mode !== 'closing') {
+  if (topic && mode !== 'closing' && !social) {
     scene.push(`If the talk needs a subject, bring up ${topic}. It is something you noticed or wondered about yourself, not a news bulletin.`);
   }
+
+  const socialLines = socialScene(social);
+  if (socialLines.length) scene.push(socialLines.join('\n'));
 
   const learnedNote = asString(lessonNote, 180);
   if (learnedNote) scene.push(learnedNote);

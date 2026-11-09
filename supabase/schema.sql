@@ -44,13 +44,31 @@ create table if not exists public.village_npc_memories (
   id              text        primary key,
   npc_id          text        not null,
   about_npc_id    text,
+  source_npc_id   text,
   kind            text        not null default 'event',
   description     text        not null,
+  claim           text,
+  confidence      real        not null default 0.50 check (confidence between 0 and 1),
   importance      real        not null default 0.40 check (importance between 0 and 1),
   context         text,
   conversation_id text,
   created_at      timestamptz not null default now()
 );
+
+-- Additive migration for projects that already ran an earlier version of this file.
+-- Keeping these here means a re-run upgrades the table without touching existing rows.
+alter table public.village_npc_memories add column if not exists source_npc_id text;
+alter table public.village_npc_memories add column if not exists claim text;
+alter table public.village_npc_memories add column if not exists confidence real not null default 0.50;
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'village_mem_confidence_check'
+  ) then
+    alter table public.village_npc_memories
+      add constraint village_mem_confidence_check check (confidence between 0 and 1);
+  end if;
+end $$;
 
 create index if not exists village_mem_npc_idx
   on public.village_npc_memories (npc_id, created_at desc);

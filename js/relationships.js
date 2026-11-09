@@ -14,13 +14,17 @@
 // manual act in the Conversation Logs panel.
 
 import { createRetryQueue } from './sync_queue.js';
+import { CAST, opinionRecordFor } from './cast.js';
 
 export const CATEGORIES = [
   'stranger', 'neutral', 'acquaintance', 'friendly', 'friend',
   'close friend', 'best friend', 'disliked', 'enemy',
 ];
 
-const STORAGE_KEY = 'aivillage.relationships.v1';
+// A new key: the previous graph belonged to the old personalities. Starting from v2
+// lets the new cast arrive with its own history instead of inheriting old scores that
+// no longer describe anyone.
+const STORAGE_KEY = 'aivillage.relationships.v2';
 const ENDPOINT = '/api/relationships';
 
 // The same derivation as server/relationships.js: one formula, two copies.
@@ -380,6 +384,47 @@ export function createRelationships({
     };
   }
 
+  // A rumour or opinion about someone who is not in the room still changes how the
+  // listener sees that person. The amount depends on how much the listener trusts the
+  // source and how confident the claim is. It is deliberately small: one bit of gossip
+  // colours a view, it does not replace it.
+  function applySocialClaim({
+    listenerId,
+    subjectId,
+    sourceId = null,
+    kind = 'claim',
+    tone = 0,
+    confidence = 0.5,
+  } = {}) {
+    if (!listenerId || !subjectId || listenerId === subjectId) return null;
+    const record = recordFor(listenerId, subjectId);
+    const source = sourceId && sourceId !== listenerId ? recordFor(listenerId, sourceId) : null;
+    const sourceTrust = source ? clamp(source.trust, 0.3) : 0.42;
+    const credence = clamp((0.25 + sourceTrust * 0.9) * (0.45 + clamp(confidence, 0.5) * 0.55), 0);
+    const force = kind === 'secret' ? 1.4 : kind === 'fact' || kind === 'witnessed' ? 0.8 : 1.7;
+    const before = record.category;
+    const delta = (Number(tone) || 0) * force * credence;
+
+    record.score = clampScore(record.score + delta);
+    record.trust = clamp(record.trust + (delta < 0 ? -0.018 * credence : 0.012 * credence), 0);
+    record.dislike = clamp(record.dislike + (delta < 0 ? 0.035 * credence : -0.008 * credence), 0);
+    record.familiarity = clamp(record.familiarity + 0.012, 0);
+    record.lastInteraction = new Date().toISOString();
+    touch(record);
+
+    return {
+      npcId: listenerId,
+      otherId: subjectId,
+      otherName: null,
+      sourceId,
+      kind,
+      from: before,
+      to: record.category,
+      delta: Number(delta.toFixed(2)),
+      promoted: null,
+    };
+  }
+
   // How much this villager wants to talk to that one right now. Used by the lifestyle
   // machine: friends are worth walking to, an enemy is not.
   function appeal(a, b) {
@@ -393,35 +438,42 @@ export function createRelationships({
   }
 
   function seededRelationships() {
-    // the two existing friendships the village starts with, so day one is not ten
-    // strangers: a couple of neighbours already know each other
-    const seeds = [
-      // One long-standing grudge, so a bad relationship is something the village can
-      // actually show: this pair argues more often and can come to blows.
-      ['npc_02', 'npc_06', -24, 0.5, 0.5],
-      ['npc_06', 'npc_02', -20, 0.45, 0.42],
-      ['npc_04', 'npc_08', 22, 0.35],
-      ['npc_08', 'npc_04', 26, 0.35],
-      ['npc_09', 'npc_03', 14, 0.22],
-      ['npc_03', 'npc_09', 11, 0.2],
-      ['npc_07', 'npc_05', 9, 0.18],
-      ['npc_05', 'npc_07', 7, 0.15],
-    ];
-    for (const [npcId, otherId, score, familiarity, dislike = 0] of seeds) {
-      const record = recordFor(npcId, otherId);
-      if (record.interactions > 0) continue;
-      record.score = score;
-      record.familiarity = familiarity;
-      record.trust = 0.4;
-      record.dislike = clamp(dislike, 0);
-      record.interactions = 2;
-      record.category = deriveCategory(record);
-      dirty.add(keyOf(npcId, otherId));
+    // Every one of the ninety directions comes from js/cast.js. The old village seeded
+    // four friendly pairs and one grudge; that left most people blank and made the
+    // social web look symmetrical. These opinions are individual and often disagree
+    // with the other person's opinion in return.
+    for (const npcId of Object.keys(CAST)) {
+      for (const otherId of Object.keys(CAST)) {
+        if (npcId === otherId) continue;
+        const seed = opinionRecordFor(npcId, otherId);
+        if (!seed) continue;
+        const key = keyOf(npcId, otherId);
+        const existing = records.get(key);
+        // Once a pair has talked in this save, their relationship belongs to what
+        // happened, not to the opening opinion. A missing row is filled in.
+        if (existing && (existing.interactions > 0 || existing.notes)) continue;
+        const record = existing || recordFor(npcId, otherId);
+        record.score = clampScore(seed.score);
+        record.trust = clamp(seed.trust, 0.3);
+        record.familiarity = clamp(seed.familiarity, 0.08);
+        record.friendliness = clamp(0.35 + Math.max(0, seed.score) / 160, 0.4);
+        record.affection = clamp(0.08 + Math.max(0, seed.score) / 180, 0.1);
+        record.dislike = clamp(seed.dislike, 0);
+        record.notes = seed.notes;
+        record.interactions = 2;
+        record.category = deriveCategory(record);
+        record.updatedAt = new Date().toISOString();
+        record.synced = false;
+        dirty.add(key);
+      }
     }
+    persistLocal();
   }
 
   loadLocal();
-  if (!records.size) seededRelationships();
+  // Fill in anything absent rather than only seeding a completely empty store. This
+  // also repairs a half-written local mirror without touching evolved relationships.
+  seededRelationships();
   // Anything the server has not confirmed is offered again on this visit. Without
   // this, a browser that was opened before the schema existed kept its local records
   // forever and the table stayed empty until a conversation happened to touch them.
@@ -430,6 +482,7 @@ export function createRelationships({
   return {
     load,
     applyConversation,
+    applySocialClaim,
     appeal,
     // "for" is a reserved word, so the lookup is called record()
     record: recordFor,

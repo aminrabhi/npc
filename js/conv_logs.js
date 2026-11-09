@@ -130,8 +130,15 @@ export function createConvLogs({
     if (filterNpc !== 'all' && !session.participants.some((participant) => participant.id === filterNpc)) return false;
     if (!query) return true;
     const needle = query.toLowerCase();
+    const socialText = (session.socialSeeds || []).map((seed) => [
+      seed.subjectName,
+      seed.claim,
+      seed.sourceName,
+      seed.angle,
+    ].filter(Boolean).join(' ')).join(' ');
     return session.messages.some((message) => message.text.toLowerCase().includes(needle))
-      || session.participants.some((participant) => participant.name.toLowerCase().includes(needle));
+      || session.participants.some((participant) => participant.name.toLowerCase().includes(needle))
+      || socialText.toLowerCase().includes(needle);
   }
 
   function sessionLabel(session) {
@@ -156,6 +163,7 @@ export function createConvLogs({
       session.savedAt ? 'saved' : (!live && session.status !== 'active' ? 'local only' : ''),
       last && last.generatedBy === 'offline' ? 'offline line' : '',
       last && last.generatedBy === 'cached' ? 'cached line' : '',
+      session.social ? `about ${session.social.subjectName}` : '',
     ].filter(Boolean);
     meta.textContent = bits.join(' · ');
     row.appendChild(head);
@@ -228,13 +236,31 @@ export function createConvLogs({
       : (session.relationshipAtStart || []);
     if (!rows.length) return '';
     const lines = rows.map((row) => {
+      const note = row.note ? `<div class="cl-sub">${escapeHtml(row.note)}</div>` : '';
       if (row.from && row.to) {
         const arrow = row.from === row.to ? row.to : `${row.from} → ${row.to}`;
-        return `<li>${nameOf(row.npcId)} → ${nameOf(row.otherId)}: ${arrow} (${row.delta >= 0 ? '+' : ''}${row.delta})</li>`;
+        return `<li>${nameOf(row.npcId)} → ${nameOf(row.otherId)}: ${arrow} (${row.delta >= 0 ? '+' : ''}${row.delta})${note}</li>`;
       }
-      return `<li>${nameOf(row.npcId)} → ${nameOf(row.otherId)}: ${row.category} (score ${row.score})</li>`;
+      return `<li>${nameOf(row.npcId)} → ${nameOf(row.otherId)}: ${row.category} (score ${row.score})${note}</li>`;
     });
     return `<div class="cl-block"><div class="cl-block-title">Relationship</div><ul>${lines.join('')}</ul></div>`;
+  }
+
+  function socialBlock(session) {
+    const seeds = (session.socialSeeds && session.socialSeeds.length)
+      ? session.socialSeeds
+      : (session.social ? [session.social] : []);
+    if (!seeds.length) return '';
+    const rows = seeds.map((seed) => {
+      const subject = seed.subjectName || nameOf(seed.subjectId) || 'someone';
+      const source = seed.sourceName || (seed.sourceNpcId ? nameOf(seed.sourceNpcId) : '');
+      const confidence = Number(seed.confidence);
+      const sure = Number.isFinite(confidence) ? ` · ${Math.round(confidence * 100)}% sure` : '';
+      const sourceText = source && source !== subject ? ` · heard from ${escapeHtml(source)}` : '';
+      const claim = seed.claim ? `<div class="cl-text">${escapeHtml(seed.claim)}</div>` : '';
+      return `<li><span class="cl-tag">${escapeHtml(seed.angle || seed.kind || 'talk')}</span> <strong>${escapeHtml(subject)}</strong>${sourceText}${sure}${claim}</li>`;
+    });
+    return `<div class="cl-block"><div class="cl-block-title">People on their mind</div><ul>${rows.join('')}</ul></div>`;
   }
 
   function nameOf(id) {
@@ -244,9 +270,12 @@ export function createConvLogs({
 
   function memoryBlock(session) {
     if (!session.memories || !session.memories.length) return '';
-    const rows = session.memories.map((memory) => (
-      `<li><span class="cl-tag">${memory.kind}</span> ${memory.description}</li>`
-    ));
+    const rows = session.memories.map((memory) => {
+      const source = memory.sourceNpcId ? nameOf(memory.sourceNpcId) : '';
+      const confidence = Number(memory.confidence);
+      const meta = [source ? `source: ${source}` : '', Number.isFinite(confidence) ? `${Math.round(confidence * 100)}% sure` : ''].filter(Boolean).join(' · ');
+      return `<li><span class="cl-tag">${memory.kind}</span> ${memory.description}${meta ? `<div class="cl-sub">${escapeHtml(meta)}</div>` : ''}</li>`;
+    });
     return `<div class="cl-block"><div class="cl-block-title">Memories kept from this talk</div><ul>${rows.join('')}</ul></div>`;
   }
 
@@ -314,6 +343,7 @@ export function createConvLogs({
           <span>outcome ${session.outcome || 'complete'}</span>
         </div>
         ${transcriptBlock(saved.messages)}
+        ${socialBlock(session)}
         ${relationshipBlock(session)}
         ${memoryBlock(session)}
         ${newsBlock(session)}
@@ -352,6 +382,7 @@ export function createConvLogs({
         <span>${savedAt ? 'saved to Supabase' : 'local only · not saved'}</span>
       </div>
       ${transcriptBlock(session.messages)}
+      ${socialBlock(session)}
       ${relationshipBlock(session)}
       ${memoryBlock(session)}
       ${newsBlock(session)}

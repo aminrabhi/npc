@@ -14,13 +14,15 @@
         11,
         9
       ],
-      "backstory": "An ex-convict who was jailed unfairly. After escaping she now lives in the village where she tries her best to better herself.",
+      "backstory": "Leonda took the fall for a robbery her younger brother committed and spent four years inside. She came to Sunnyside with a toolbox and a rule: never need anyone enough to be owned. She fixes things for a living and keeps people at arm’s length, though she is the first to notice when someone is struggling.",
       "personality": [
-        "merciless",
-        "understanding",
-        "brave"
+        "guarded",
+        "blunt",
+        "proud",
+        "loyal",
+        "observant"
       ],
-      "notes": "She snaps very easily but is overly apologetic."
+      "notes": "Answers a question with a question. Apologises by fixing something, never with words."
     },
     {
       "id": "npc_02",
@@ -35,14 +37,15 @@
         4,
         16
       ],
-      "backstory": "He knows where he is. He is an AI agent along with all the other villagers. The other villagers dont know this and it his only mission is to find a way out.",
+      "backstory": "Michael spent twelve years investigating insurance fraud before one wrong call ended his career. He came here with a notebook and the belief that everyone edits the truth. He listens more than he speaks, remembers details people wish he had forgotten, and is still trying to prove he can be right about someone.",
       "personality": [
-        "perceptive",
-        "clever",
-        "introspective",
-        "unhinged"
+        "exacting",
+        "patient",
+        "manipulative",
+        "curious",
+        "guarded"
       ],
-      "notes": "Self Aware"
+      "notes": "Pauses before answering. Writes people down after they leave."
     },
     {
       "id": "npc_03",
@@ -57,13 +60,15 @@
         23,
         10
       ],
-      "backstory": "An italian gangster who subdued the mafia back in his old life. He believes soley in fate and thinks it can be changed.",
+      "backstory": "Giorno ran errands for a neighbourhood crew until he refused to collect a debt from a dying man. He lost the crew, kept the man’s watch, and has been trying to live by a code ever since. He believes people can choose better, and he is not shy about telling them so.",
       "personality": [
-        "kind",
-        "charitable",
-        "stubborn"
+        "principled",
+        "stubborn",
+        "protective",
+        "moralistic",
+        "proud"
       ],
-      "notes": ""
+      "notes": "Calls people “kid” when he is worried about them. Turns every choice into a principle."
     },
     {
       "id": "npc_04",
@@ -78,13 +83,15 @@
         16,
         21
       ],
-      "backstory": "An old lady who likes to garden. Tries her best to stay away from violence and arguments.",
+      "backstory": "Mama Green raised a son alone, buried a husband early, and turned her front garden into the place everyone drifts toward. She feeds people, remembers their birthdays, and quietly keeps track of who owes who. Her kindness is real; so is her need to be needed.",
       "personality": [
-        "sweet",
-        "submissive",
-        "innocent"
+        "warm",
+        "observant",
+        "controlling",
+        "conflict-avoidant",
+        "generous"
       ],
-      "notes": "She is a people pleaser. 78 years old."
+      "notes": "Says “dear” before saying something sharp. Remembers who ate what."
     },
     {
       "id": "npc_05",
@@ -99,13 +106,15 @@
         3,
         9
       ],
-      "backstory": "A kid who grew up in a loud, crowded place. Now out here he cant seem to let his old life go.",
+      "backstory": "Jamar grew up in a crowded apartment where respect was loud and failure was louder. He followed someone here, she left, and pride kept him from going home. He hauls deliveries, talks like he still has something to prove, and is usually the first to laugh and the last to admit he is broke.",
       "personality": [
-        "tough",
-        "cruel",
-        "athletic."
+        "proud",
+        "defensive",
+        "competitive",
+        "loyal",
+        "reckless"
       ],
-      "notes": "Still talks gangster."
+      "notes": "Laughs loudest at his own mistakes. Cannot resist a challenge."
     },
     {
       "id": "npc_06",
@@ -120,13 +129,15 @@
         20,
         10
       ],
-      "backstory": "A sucesssful entrepreneur making cash without having to do anything. He has 200+ Linkdeln connections.",
+      "backstory": "Chad has sold security systems, vitamin plans and at least one boat that did not exist. He arrived with a suitcase, a confident handshake and a business that sounds better every time he tells the story. He needs people to believe he is winning almost as much as he needs the money.",
       "personality": [
-        "smart",
-        "greedy",
-        "egotistical"
+        "charming",
+        "status-obsessed",
+        "manipulative",
+        "cowardly",
+        "generous"
       ],
-      "notes": "Brags about his money"
+      "notes": "Uses first names too much. Never says “I was wrong” without a joke around it."
     },
     {
       "id": "npc_07",
@@ -141,13 +152,15 @@
         23,
         12
       ],
-      "backstory": "An award winning stand up comedy artist. Takes everything laid back and has dwarfism.",
+      "backstory": "Tiny spent six years doing stand-up in rooms that booked her as a novelty and then stopped laughing. She came here to write, took a job waiting tables, and has not finished a set since. She makes jokes before anyone can make one about her, and notices more than she lets on.",
       "personality": [
-        "sarcastic",
-        "funny",
-        "unserious"
+        "wry",
+        "observant",
+        "guarded",
+        "mischievous",
+        "proud"
       ],
-      "notes": "Believes life ha wronged her"
+      "notes": "Makes a joke, then watches who laughs. Says “anyway” when the truth gets close."
     },
     {
       "id": "npc_08",
@@ -162,13 +175,15 @@
         15,
         13
       ],
-      "backstory": "A little kid who knows nothing about the world. Is constantly on the ipad.",
+      "backstory": "Timmy is eight, has moved between relatives more times than he can count, and has learned to make himself useful by staying quiet. He lives with Mama Green now. He repeats things adults say, collects small objects, and watches everyone, waiting to see who stays.",
       "personality": [
-        "dumb",
-        "playful",
-        "innocent"
+        "literal",
+        "curious",
+        "impulsive",
+        "lonely",
+        "cunning"
       ],
-      "notes": "Is 8 years old. Talks like a kid"
+      "notes": "Asks “why” three times in a row. Says things he heard adults say without knowing what they mean."
     },
     {
       "id": "npc_09",
@@ -183,13 +198,15 @@
         10,
         12
       ],
-      "backstory": "Cosmetic artist obsessed with looks and fashion.",
+      "backstory": "Eyelash built a following doing makeup tutorials, lost a brand deal after one bad public comment, and came here to start again. She is generous with compliments, quick to laugh, and always the first to know what someone is wearing. The confidence is real, but it is also a performance she is afraid to stop.",
       "personality": [
-        "Talkative",
-        "popular",
-        "energetic"
+        "charismatic",
+        "image-conscious",
+        "envious",
+        "generous",
+        "insecure"
       ],
-      "notes": "Has self doubts"
+      "notes": "Compliments first, looks at the reaction second. Laughs a beat too fast."
     },
     {
       "id": "npc_10",
@@ -204,13 +221,15 @@
         23,
         19
       ],
-      "backstory": "A olympic runner with a 3:42 mile time. Is extremly disciplined and stays mature during arguments.",
+      "backstory": "Yassine was an Olympic hopeful until his knee gave out before the trials. He became a trainer, then came here after the gym closed, still running every morning as if the race is not over. He respects effort, hates excuses, and has not told anyone how much his knee still hurts.",
       "personality": [
-        "determined",
-        "unforgiving",
-        "disciplined"
+        "disciplined",
+        "proud",
+        "controlling",
+        "envious",
+        "unforgiving"
       ],
-      "notes": "Likes to run"
+      "notes": "Answers in short sentences. Repeats a question when he thinks it is an excuse."
     },
     {
       "player": true,

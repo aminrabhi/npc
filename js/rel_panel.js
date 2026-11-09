@@ -155,6 +155,12 @@ export function createRelPanel({ relationships, roster = [], conversations = nul
     bar.appendChild(fill);
 
     row.append(head, meta, bar);
+    if (record.notes) {
+      const note = document.createElement('div');
+      note.className = 'cl-sub';
+      note.textContent = record.notes;
+      row.append(note);
+    }
     return row;
   }
 

@@ -32,6 +32,13 @@ export const CATEGORIES = [
   'disagreement',
   'positive',
   'ending',
+  'gossip',
+  'question',
+  'defend',
+  'rumor',
+  'secret',
+  'grudge',
+  'envy',
 ];
 
 // How long a template rests before it may be drawn again, and how long a subject
@@ -332,6 +339,106 @@ const ENDING = {
   ],
 };
 
+// ---------------------------------------------------------- third-person talk
+// These are the conversations the village was missing: someone else is the subject.
+// {subject} is a person who is not in the conversation, {claim} is what the speaker
+// believes or heard, and {source} is where it came from. None of them explains a
+// relationship from the outside; the opinion has to do the work.
+const GOSSIP = [
+  'You know how {subject} is. {claim}',
+  'I am not saying anything about {subject}. I am saying I have started noticing.',
+  'It is not the thing itself. It is the way {subject} does it.',
+  'You have seen how {subject} gets. What is that about?',
+  'I tried with {subject}. I am finished trying.',
+  'At least {subject} is consistent. Consistently like that.',
+  'Do not repeat this, but {subject} has been on my mind.',
+  'I do not have a problem with {subject}. I have a problem with the performance.',
+  'Someone needs to tell {subject} to stop. It is not going to be me.',
+  'I used to defend {subject}. I am running out of material.',
+  'You can like {subject}. I am not asking you to agree with me.',
+  'It is the little things with {subject}. They add up.',
+];
+
+const QUESTION = [
+  'What do you actually think of {subject}? Do not give me the polite answer.',
+  'Has {subject} said anything about me? You can tell me.',
+  'Why does {subject} get away with that?',
+  'Do you trust {subject}? I cannot decide.',
+  'Be honest. Am I wrong about {subject}?',
+  'You talk to {subject} more than I do. What is going on there?',
+  'What did {subject} mean by that? I keep going back to it.',
+  'If {subject} told you something, would you tell me?',
+  'Does {subject} seem different to you lately?',
+  'What is {subject}’s problem with me?',
+  'You would tell me if {subject} said something? I am asking properly.',
+  'What is the worst thing about {subject}? Be specific.',
+];
+
+const DEFEND = [
+  'Everyone has decided {subject} is a problem. I think that is convenient.',
+  '{subject} is not perfect. Neither are you.',
+  'I have heard what people say about {subject}. Most of it is nonsense.',
+  'You can dislike {subject}. You do not get to make things up.',
+  'I have seen {subject} do good things when nobody was watching.',
+  'It is easy to judge {subject} from over here.',
+  'Say it to {subject}’s face, then. Not to me.',
+  'I am not saying {subject} is innocent. I am saying I do not believe you.',
+  'That is not the {subject} I know.',
+  'You are all very sure for people who were not there.',
+  'I would rather hear it from {subject} than from the rest of you.',
+  'You can be angry with {subject} without turning it into a story.',
+];
+
+const RUMOR = [
+  'I heard this about {subject}: {claim}',
+  'Someone told me {claim}. It was about {subject}.',
+  'I do not know if it is true. {claim}. That is what I heard about {subject}.',
+  'What have you heard about {subject}? I heard {claim}',
+  'This stays between us. {claim}',
+  '{subject} has been telling people something. I heard {claim}',
+  'I am only repeating what I was told. {claim}',
+  'If that is true about {subject}, a lot of things make sense.',
+  'I was not there. I only know what I heard: {claim}',
+  'Do not go repeating this, but it came from {source}: {claim}',
+];
+
+const SECRET = [
+  'Do not repeat this. {claim}',
+  'I have not told anyone this. {claim}',
+  'You can keep a thing quiet, can’t you? {claim}',
+  'I am only saying this because I trust you. {claim}',
+  'This does not leave this conversation. {claim}',
+  'I do not want advice. I just need someone to know. {claim}',
+  'You know something about me now. {claim}',
+  'I have been carrying this alone. {claim}',
+];
+
+const GRUDGE = [
+  '{subject} still owes me an apology. We both know it.',
+  'I am not bringing it up. I am just saying I remember.',
+  'They can act friendly. I know what {subject} said.',
+  'It was not the thing. It was the way {subject} did it.',
+  'I have let it go. I have not forgotten it. There is a difference.',
+  'Everyone else moved on. Good for them.',
+  'I do not need an apology. I need {subject} to stop pretending it did not happen.',
+  'You can tell {subject} I said that. See what they do.',
+  'It has been months. It still gets me.',
+  'I am not going to be the one who makes it easy.',
+];
+
+const ENVY = [
+  'Must be nice to be {subject}. Nothing ever sticks.',
+  '{subject} makes it look easy. I hate that.',
+  'I do not want to be {subject}. I want the part where everyone trusts them.',
+  'Some people get the room without asking.',
+  'It is not envy. It is an observation. {subject} gets away with everything.',
+  'I would not trade places. I would trade the reception.',
+  'You know what {subject} has that I do not? Timing.',
+  'I am happy for {subject}. That is the worst part.',
+  'Everyone asks {subject}. Nobody asks me.',
+  'I have done the same work. Somehow it counts more when {subject} does it.',
+];
+
 // A style may colour a greeting, but never rewrites the whole line: two villagers
 // must still sound like themselves rather than like a template with a label.
 const STYLE_PREFIX = {
@@ -579,6 +686,9 @@ export function createOfflineDialogue({
       like: ctx.like ? ctx.like.toLowerCase() : '',
       dislike: ctx.dislike ? ctx.dislike.toLowerCase() : '',
       memory: ctx.memory ? stripEnd(clip(ctx.memory, 62)) : '',
+      subject: ctx.subject || '',
+      claim: ctx.claim ? stripEnd(clip(ctx.claim, 64)) : '',
+      source: ctx.source || '',
       weather: ctx.weatherText || '',
       time: ctx.timeText || '',
       news: ctx.news ? stripEnd(clip(ctx.news, 64)) : '',
@@ -609,9 +719,24 @@ export function createOfflineDialogue({
     const options = [];
     const add = (category, weight) => { if (weight > 0) options.push({ category, weight }); };
 
+    const socialCategory = ctx.socialCategory || (ctx.social && ctx.social.category) || '';
     if (ctx.mode === 'closing') {
-      if (ctx.mood === 'tense' || ctx.band === 'cold') add('ending', 10);
-      else add('ending', 10);
+      add('ending', 10);
+    } else if (socialCategory) {
+      if (ctx.mode === 'opening') {
+        add(socialCategory, 12);
+        if (ctx.mood === 'tense') add('disagreement', 5);
+        else add('greeting', 2);
+      } else if (ctx.mood === 'tense') {
+        add('disagreement', 8);
+        add(socialCategory, 6);
+        add('ending', 1);
+      } else {
+        add(socialCategory, 8);
+        add('question', 2);
+        add('disagreement', 1);
+        add('casual', 1);
+      }
     } else if (ctx.mode === 'opening') {
       if (ctx.mood === 'tense') {
         add('disagreement', 8);
@@ -653,6 +778,20 @@ export function createOfflineDialogue({
         return DISAGREEMENT.soft;
       case 'positive':
         return POSITIVE;
+      case 'gossip':
+        return GOSSIP;
+      case 'question':
+        return QUESTION;
+      case 'defend':
+        return DEFEND;
+      case 'rumor':
+        return RUMOR;
+      case 'secret':
+        return SECRET;
+      case 'grudge':
+        return GRUDGE;
+      case 'envy':
+        return ENVY;
       case 'friendship':
         return FRIENDSHIP;
       case 'bestfriend':
@@ -718,6 +857,11 @@ export function createOfflineDialogue({
       timeText: timePhrase(input.timeOfDay),
       news: input.news && input.news.headline ? input.news.headline : '',
       topic: input.topic || '',
+      social: input.social || null,
+      socialCategory: input.social && input.social.category ? input.social.category : '',
+      subject: input.social ? input.social.subjectName || '' : '',
+      claim: input.social ? input.social.claim || '' : '',
+      source: input.social ? input.social.sourceName || '' : '',
       activityText: activityPhrase(input.activity),
       recentLines: Array.isArray(input.recentLines) ? input.recentLines : [],
     };

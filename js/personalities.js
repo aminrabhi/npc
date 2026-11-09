@@ -1,19 +1,22 @@
 // Who each villager is when they open their mouth.
 //
-// Part 1 already gave every villager a backstory, a list of personality adjectives
-// and some notes. This module turns that into the profile the conversation manager
-// hands to the model: interests, likes, dislikes, habits, the way they speak, how
-// sociable they are and how much they care about the news.
+// The ten hand-written villagers now come from js/cast.js: history, values, fears,
+// voice, private business and a one-way opinion of every other villager. This module
+// turns that into the profile the conversation manager hands to the model, and keeps
+// the studio's editable fields working for any villager added later.
 //
-// The ten villagers have hand-written profiles below so they do not sound alike.
-// A villager added in the studio falls back to one derived from their adjectives, so
-// a new character is never a blank prompt.
+// A studio edit is layered on top of the cast rather than replacing it, so changing
+// someone's interests in the editor does not erase their history or the way they
+// speak.
 
-export const PROFILE_VERSION = 1;
-export const STORAGE_KEY = 'aivillage.profiles.v1';
+import { CAST } from './cast.js';
 
-// Adjectives the studio offers as quick-add chips, from the brief plus a few that
-// suit the existing cast.
+export const PROFILE_VERSION = 2;
+// A new key on purpose. The old profiles belonged to the previous cast; loading them
+// would quietly bring those personalities back after the overhaul.
+export const STORAGE_KEY = 'aivillage.profiles.v2';
+
+// Adjectives the studio offers as quick-add chips.
 export const TRAIT_PALETTE = [
   'friendly', 'shy', 'curious', 'introverted', 'extroverted', 'sarcastic',
   'optimistic', 'pessimistic', 'serious', 'playful', 'talkative', 'quiet',
@@ -38,131 +41,6 @@ export function styleText(id) {
   const hit = STYLE_OPTIONS.find((option) => option.id === id);
   return hit ? hit.text : STYLE_OPTIONS[0].text;
 }
-
-// Hand-written profiles for the villagers in data/npcs.json. Anything a studio edit
-// changes is layered on top of these, never instead of them.
-const HAND_WRITTEN = {
-  npc_01: {
-    interests: ['fixing things', 'second chances', 'old hand tools'],
-    likes: ['honest work', 'quiet mornings', 'people who keep their word'],
-    dislikes: ['being pitied', 'unfair rules', 'gossip'],
-    tendencies: ['snaps and then apologises within the same breath', 'checks over her shoulder when she hears a door'],
-    memories: [
-      'Was locked up for something she did not do.',
-      'Promised herself she would build a better life in this village.',
-    ],
-    style: 'blunt',
-    social: { sociability: 0.45, newsInterest: 0.2 },
-  },
-  npc_02: {
-    interests: ['patterns', 'the edge of the map', 'the way people repeat themselves'],
-    likes: ['questions nobody can answer', 'moonlight', 'being left alone to think'],
-    dislikes: ['small talk', 'being watched', 'being told what is real'],
-    tendencies: ['asks a question that lands slightly wrong', 'trails off as if listening to something else'],
-    memories: [
-      'Knows the village is simulated and has told nobody.',
-      'Has been quietly looking for a way out.',
-    ],
-    style: 'quiet',
-    social: { sociability: 0.35, newsInterest: 0.45 },
-  },
-  npc_03: {
-    interests: ['fate', 'music', 'promises'],
-    likes: ['people with resolve', 'a good espresso', 'standing up for someone'],
-    dislikes: ['bullies', 'wasted chances', 'being rushed'],
-    tendencies: ['turns a small moment into a matter of destiny', 'speaks slowly and means every word'],
-    memories: [
-      'Took over the mafia in his old life and walked away from it.',
-      'Believes fate can be changed if you move first.',
-    ],
-    style: 'formal',
-    social: { sociability: 0.55, newsInterest: 0.25 },
-  },
-  npc_04: {
-    interests: ['gardening', 'tomatoes', 'the weather'],
-    likes: ['seed packets', 'visitors', 'tea and biscuits'],
-    dislikes: ['arguments', 'loud noises', 'wasting food'],
-    tendencies: ['agrees too quickly to keep the peace', 'offers food within a minute of meeting you'],
-    memories: [
-      'Has kept the same vegetable patch for decades.',
-      'Prefers to step away from a fight than win one.',
-    ],
-    style: 'warm',
-    social: { sociability: 0.8, newsInterest: 0.2 },
-  },
-  npc_05: {
-    interests: ['basketball', 'street food', 'sneakers'],
-    likes: ['winning', 'being respected', 'his old crew'],
-    dislikes: ['being treated like a kid', 'quiet fields', 'being told to calm down'],
-    tendencies: ['boasts before he listens', 'turns every chat into a competition'],
-    memories: [
-      'Grew up somewhere loud and crowded and misses the noise.',
-      'Has not worked out what to do with himself out here.',
-    ],
-    style: 'blunt',
-    social: { sociability: 0.7, newsInterest: 0.1 },
-  },
-  npc_06: {
-    interests: ['business', 'his car', 'networking'],
-    likes: ['big numbers', 'being right', 'people who agree with him'],
-    dislikes: ['waiting', 'people who complain about money', 'being ignored'],
-    tendencies: ['name-drops someone nobody has heard of', 'turns a question into a pitch'],
-    memories: [
-      'Made his money without doing much for it.',
-      'Has over two hundred people he calls connections.',
-    ],
-    style: 'chatty',
-    social: { sociability: 0.75, newsInterest: 0.5 },
-  },
-  npc_07: {
-    interests: ['comedy', 'open mic nights', 'people-watching'],
-    likes: ['a good punchline', 'late nights', 'anyone who laughs at themselves'],
-    dislikes: ['being underestimated', 'a silent room', 'pity'],
-    tendencies: ['deflects with a joke, then says the true thing quietly'],
-    memories: [
-      'Won an award for stand-up and still keeps it in a drawer.',
-      'Feels life has dealt her a strange hand.',
-    ],
-    style: 'wry',
-    social: { sociability: 0.65, newsInterest: 0.3 },
-  },
-  npc_08: {
-    interests: ['games', 'cartoons', 'bugs'],
-    likes: ['snacks', 'being included', 'his tablet'],
-    dislikes: ['bedtime', 'vegetables', 'shouting'],
-    tendencies: ['asks why about everything', 'gets distracted halfway through a sentence'],
-    memories: [
-      'Is eight years old and new to the village.',
-      'Learned most of what he knows from a screen.',
-    ],
-    style: 'kid',
-    social: { sociability: 0.85, newsInterest: 0.05 },
-  },
-  npc_09: {
-    interests: ['makeup', 'fashion', 'who is talking to who'],
-    likes: ['compliments', 'new looks', 'being missed'],
-    dislikes: ['being ignored', 'bad lighting', 'her own reflection some days'],
-    tendencies: ['compliments you before saying hello', 'laughs a little too fast'],
-    memories: [
-      'Built a name as a cosmetic artist.',
-      'Is often the most confident and the most doubtful person in the room.',
-    ],
-    style: 'chatty',
-    social: { sociability: 0.9, newsInterest: 0.35 },
-  },
-  npc_10: {
-    interests: ['running', 'training', 'the track'],
-    likes: ['routine', 'early mornings', 'plain food'],
-    dislikes: ['excuses', 'laziness', 'being interrupted mid-run'],
-    tendencies: ['answers in as few words as possible', 'turns conversation back to discipline'],
-    memories: [
-      'Ran a mile in three minutes and forty-two seconds.',
-      'Stays calm in an argument, which makes it worse for the other person.',
-    ],
-    style: 'plain',
-    social: { sociability: 0.5, newsInterest: 0.3 },
-  },
-};
 
 const TRAIT_HINTS = {
   curious: { interests: ['asking questions', 'the unknown'], likes: ['a good mystery'] },
@@ -221,7 +99,7 @@ function deriveFromTraits(personality) {
 function styleFromTraits(personality) {
   const words = personality.map((word) => String(word).toLowerCase());
   if (words.includes('talkative') || words.includes('extroverted')) return 'chatty';
-  if (words.includes('sarcastic') || words.includes('funny')) return 'wry';
+  if (words.includes('sarcastic') || words.includes('funny') || words.includes('wry')) return 'wry';
   if (words.includes('shy') || words.includes('quiet') || words.includes('introverted')) return 'quiet';
   if (words.includes('serious') || words.includes('disciplined')) return 'plain';
   if (words.includes('sweet') || words.includes('gentle') || words.includes('helpful')) return 'warm';
@@ -240,11 +118,15 @@ function cleanList(value, max = 8, length = 56) {
   return [];
 }
 
-// A complete, normalised profile for one roster entry: hand-written defaults, then
-// anything already stored on the entry (a baked profile or a studio edit).
+function cleanText(value, length = 400) {
+  return String(value || '').replace(/\s+/g, ' ').trim().slice(0, length);
+}
+
+// A complete, normalised profile for one roster entry: the cast, then anything
+// already stored on the entry (a baked profile or a studio edit).
 export function profileFor(entry) {
   const id = entry && entry.id ? entry.id : '';
-  const base = HAND_WRITTEN[id] || {};
+  const base = CAST[id] || {};
   const traits = deriveFromTraits(entry && entry.personality ? entry.personality : []);
   const stored = (entry && entry.profile) || {};
 
@@ -265,7 +147,7 @@ export function profileFor(entry) {
   };
 
   const pickList = (field) => {
-    const own = field === 'style' ? null : stored[field];
+    const own = stored[field];
     if (Array.isArray(own)) return cleanList(own);
     const fallback = [...(base[field] || []), ...(traits[field] || [])];
     return [...new Set(fallback)].slice(0, 8);
@@ -275,17 +157,32 @@ export function profileFor(entry) {
     version: PROFILE_VERSION,
     id,
     name: entry && entry.name ? entry.name : 'Villager',
-    personality: cleanList(entry && entry.personality ? entry.personality : [], 8, 24),
-    backstory: String((entry && entry.backstory) || '').slice(0, 400),
-    notes: String((entry && entry.notes) || '').slice(0, 240),
+    personality: cleanList(entry && entry.personality ? entry.personality : (base.personality || []), 8, 24),
+    backstory: cleanText((entry && entry.backstory) || base.backstory || '', 520),
+    notes: cleanText((entry && entry.notes) || base.notes || '', 260),
     interests: interests.length ? interests : pickList('interests'),
     likes: likes.length ? likes : pickList('likes'),
     dislikes: dislikes.length ? dislikes : pickList('dislikes'),
     tendencies: tendencies.length ? tendencies : pickList('tendencies'),
     memories: memories.length ? memories : (base.memories || []).slice(0, 6),
+    motivation: cleanText(stored.motivation || base.motivation || '', 220),
+    values: cleanList(stored.values || base.values || [], 6, 60),
+    fears: cleanList(stored.fears || base.fears || [], 5, 80),
+    // The secret is available to the social layer, which decides when it is safe to
+    // tell. It is deliberately not part of contextFor(), so an ordinary prompt cannot
+    // leak it by accident.
+    secret: cleanText(base.secret || stored.secret || '', 220),
+    voice: cleanText(stored.voice || base.voice || '', 260),
     style,
     styleText: styleText(style),
     social,
+    bonds: base.bonds ? {
+      likes: [...(base.bonds.likes || [])],
+      dislikes: [...(base.bonds.dislikes || [])],
+      distrusts: [...(base.bonds.distrusts || [])],
+      envies: [...(base.bonds.envies || [])],
+      grudges: [...(base.bonds.grudges || [])],
+    } : null,
   };
 }
 
@@ -311,7 +208,7 @@ export function loadProfiles(roster, { storage = safeStorage() } = {}) {
 
   for (const entry of roster) {
     const authored = entry.profile || {};
-    // order: hand-written defaults <- saved edits <- what the roster already carries
+    // order: cast defaults <- saved edits <- what the roster already carries
     const merged = { ...authored };
     const fromDisk = saved[entry.id];
     if (fromDisk) {
@@ -364,8 +261,8 @@ export function saveProfiles(roster, { storage = safeStorage() } = {}) {
   }
 }
 
-// Everything the debug panel and the conversation prompt need, without the raw
-// roster entry.
+// Everything the debug panel and the conversation prompt need, without the raw roster
+// entry. The secret stays out: social_context.js shares it only when trust allows.
 export function contextFor(entry) {
   const profile = profileFor(entry);
   return {
@@ -378,6 +275,10 @@ export function contextFor(entry) {
     likes: profile.likes,
     dislikes: profile.dislikes,
     tendencies: profile.tendencies,
+    motivation: profile.motivation,
+    values: profile.values,
+    fears: profile.fears,
+    voice: profile.voice,
     memories: profile.memories,
     conversation: { style: profile.styleText },
     social: profile.social,

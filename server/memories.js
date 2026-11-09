@@ -4,7 +4,7 @@
 // (js/memories.js); this module only makes sure what arrives is well formed, has a
 // stable id (so a retry cannot duplicate it) and a sane importance score.
 
-import { asNumber, asString, clamp01 } from './http.js';
+import { asString, clamp01 } from './http.js';
 
 export const MEMORY_TYPES = new Set([
   'personal',
@@ -17,6 +17,15 @@ export const MEMORY_TYPES = new Set([
   'milestone',
   'disagreement',
   'news',
+  'fact',
+  'opinion',
+  'rumor',
+  'grudge',
+  'secret',
+  'witnessed',
+  'gossip',
+  'claim',
+  'promise',
 ]);
 
 export function normaliseMemory(raw) {
@@ -29,14 +38,18 @@ export function normaliseMemory(raw) {
   if (!description) return null;
 
   const about = asString(raw.aboutNpcId || raw.about_npc_id, 40) || null;
+  const source = asString(raw.sourceNpcId || raw.source_npc_id, 40) || null;
   const importance = clamp01(raw.importance, 0.4);
 
   return {
     id,
     npc_id: npcId,
     about_npc_id: about === npcId ? null : about,
+    source_npc_id: source === npcId ? null : source,
     kind: MEMORY_TYPES.has(kind) ? kind : 'event',
     description,
+    claim: asString(raw.claim, 180) || null,
+    confidence: Number(clamp01(raw.confidence, 0.5).toFixed(3)),
     importance: Number(importance.toFixed(3)),
     context: asString(raw.context, 240) || null,
     conversation_id: asString(raw.conversationId || raw.conversation_id, 64) || null,
@@ -49,8 +62,11 @@ export function rowToMemory(row) {
     id: row.id,
     npcId: row.npc_id,
     aboutNpcId: row.about_npc_id,
+    sourceNpcId: row.source_npc_id,
     kind: row.kind,
     description: row.description,
+    claim: row.claim,
+    confidence: Number(row.confidence) || 0,
     importance: Number(row.importance) || 0,
     context: row.context,
     conversationId: row.conversation_id,
@@ -77,6 +93,14 @@ export function importanceFor(kind, extra = 0) {
     milestone: 0.9,
     relationship: 0.7,
     disagreement: 0.75,
+    secret: 0.88,
+    grudge: 0.82,
+    rumor: 0.7,
+    gossip: 0.55,
+    opinion: 0.55,
+    fact: 0.65,
+    claim: 0.5,
+    promise: 0.72,
     shared: 0.65,
     news: 0.45,
     positive: 0.5,

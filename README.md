@@ -121,8 +121,9 @@ lines mean the village is talking with real Groq lines and persisting for real.
 
 **Automatic**, during ordinary simulation, with no user interaction:
 
-* NPC memories (shared, personal, milestones, disagreements, news)
+* NPC memories (shared, personal, milestones, disagreements, news, rumours, secrets, promises, insults and grudges)
 * Relationship scores, trust, familiarity, categories, best-friend status
+* Directional opinion changes caused by gossip, with the claim, source and confidence kept
 
 **Manual**, and only this:
 
@@ -142,17 +143,40 @@ never waits on transcript persistence.
 2. They walk to a tile beside the partner, stop, and the two face each other.
 3. A session is created with a random target of 5-10 total messages.
 4. Each turn asks `/api/chat` for one line for the current speaker, with that speaker's
-   personality, the relationship, relevant memories, at most two headlines and the last
-   eight turns. allam-2-7b has a 4k context, so the prompt is deliberately small.
-5. The final message is generated in `closing` mode, so conversations end on a goodbye.
-6. Both villagers are handed back and resume the day. Cooldowns depend on category,
+   personality, motivation, voice, the relationship, relevant memories, the social seed
+   (subject, claim, source and confidence), at most two headlines and the last eight
+   turns. allam-2-7b has a 4k context, so the prompt is deliberately small.
+5. A social conversation may pivot once after a few turns, bringing in a second absent
+   villager. The seed is also kept for the memory pass, so the claim can survive the
+   conversation even when the transcript is never saved.
+6. The final message is generated in `closing` mode, so conversations end on a goodbye.
+7. Both villagers are handed back and resume the day. Cooldowns depend on category,
    sociability and a little randomness.
 
 If Groq fails three times in a row the chat ends, and every line that came from a
 fallback is badged `offline` in the logs. A failed request is never disguised as a
 generated line.
 
-## Relationships
+## Relationships and the social layer
+
+Each of the ten villagers now has a full, hand-written life in `js/cast.js`: what they
+want, what they value, what they fear, a private secret, a speaking voice, and a private
+opinion of all nine other villagers. That is 90 one-way opinions. The relationship store
+seeds one row per direction from those opinions under `aivillage.relationships.v2`, so
+Leonda's view of Chad and Chad's view of Leonda can start differently and drift further
+apart. The old symmetrical graph is deliberately not loaded.
+
+Conversations usually start with a person rather than a topic. `js/social_context.js`
+picks a third villager who is not in the room and an angle: criticise, defend, question,
+pass on a rumour, share a confidence, reopen a grudge, admit envy, notice something or
+compare. The seed carries the claim, where it came from, how confident the speaker is,
+and how each participant already feels about the subject. A reply is oriented to the
+person actually speaking, so the listener does not inherit the opener's line.
+
+Not every villager knows everything. A claim can be a fact the speaker witnessed, an
+opinion, or a rumour they only heard. The offline writer has separate third-person
+banks for these, and the model prompt is given the source and confidence so it can
+hedge, repeat or disagree rather than reporting gossip as established truth.
 
 Directional: `npc_id` + `other_id` is the key, so A can adore B while B merely tolerates
 A. Changes per conversation are small on purpose (single digits), asymmetric (weighted
@@ -160,6 +184,12 @@ by the viewer's sociability and trust), and categories are derived from the numb
 one formula (`server/relationships.js`, mirrored in `js/relationships.js`). Villagers can
 reach `friend`, `close friend` and `best friend`, and friendships make them seek each
 other out through the partner-appeal score used when choosing who to talk to.
+
+When a rumour or opinion is actually spoken, the listener's private record of the absent
+person moves a little, weighted by how much they trust the speaker and how confident the
+claim was. That record, the claim and its source are what make a later argument
+possible. The effect is intentionally smaller than a face-to-face conversation; gossip
+colours a view rather than replacing it.
 
 ## News
 
@@ -218,9 +248,11 @@ One debug surface, as before: the tile editor panel. It now has two extra button
 ## Tests
 
 ```bash
-npm run check        # syntax-check every module and route
-npm run test:api     # API routes against local Groq/Supabase/BBC test doubles
-npm run check:live   # a real deployment with real keys (see Setup, step 5)
+npm run check         # syntax-check every module and route
+npm run test:api      # API routes against local Groq/Supabase/BBC test doubles
+npm run test:offline  # the procedural writer, fallback ladder and social memory
+npm run test:social   # fighting, petting and scripted conversations
+npm run check:live    # a real deployment with real keys (see Setup, step 5)
 ```
 
 `tools/test_api.js` starts its own doubles (`tools/mock_backends.js`) and two servers,
@@ -239,7 +271,8 @@ apply and still pass.
   is tuned to keep it to one short, in-character sentence.
 * Sprites only face left and right, so a pair that has to stand one above the other
   mirrors outward instead of literally looking up or down.
-* Relationships start with a couple of long-standing neighbours so day one is not ten
-  strangers.
-* There is no fighting or hostility system in this part, only warm, neutral and cool
-  relationships.
+* Relationships start from the cast's private opinions, not from a clean slate or a
+  symmetrical graph; day one already has old warmth, wariness and unfinished business.
+* Fighting already exists as a social consequence; this pass adds the slower layer that
+  leads there: grudges, suspicion, gossip and a private opinion that can change without
+  the other person ever hearing about it.

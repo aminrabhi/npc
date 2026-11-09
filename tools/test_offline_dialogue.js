@@ -13,6 +13,9 @@ import { createDialogueCache } from '../js/dialogue_cache.js';
 import { createAiClient } from '../js/ai.js';
 import { createLessons } from '../js/lessons.js';
 import { createConversations, TOPICS } from '../js/conversation.js';
+import { createSocialContext } from '../js/social_context.js';
+import { CAST, CAST_IDS } from '../js/cast.js';
+import { createMemories } from '../js/memories.js';
 
 let checks = 0;
 let failures = 0;
@@ -93,7 +96,7 @@ const baseContext = {
 
 console.log('\nengine shape');
 const engine = createOfflineDialogue({ rng: rngFrom(11), now: () => 1_000_000 });
-check('all twelve categories are offered', CATEGORIES.length === 12);
+check('all nineteen categories are offered', CATEGORIES.length === 19);
 check('band comes from the relationship category', bandOf(best) === 'best' && bandOf(stranger) === 'neutral' && bandOf(enemy) === 'cold');
 
 const opening = engine.line({ ...baseContext, mode: 'opening', relationship: best, category: 'greeting' });
@@ -479,6 +482,120 @@ if (solo) {
     JSON.stringify(soloPayload && [soloPayload.speaker.name, soloPayload.listener.name]));
   playerConversations.finish(solo, 'abandoned', 'test');
 }
+
+console.log('\nsocial overhaul');
+check('all ten villagers hold an opinion of the other nine', CAST_IDS.length === 10
+  && CAST_IDS.every((id) => Object.keys(CAST[id].opinions || {}).length === 9));
+const leondaAboutChad = CAST.npc_01.opinions.npc_06.note;
+const chadAboutLeonda = CAST.npc_06.opinions.npc_01.note;
+check('the same pair is not written symmetrically', leondaAboutChad !== chadAboutLeonda);
+
+const socialRoster = CAST_IDS.map((id) => ({ id, name: CAST[id].name }));
+const socialGraph = {
+  record: () => ({ category: 'stranger', score: 0, trust: 0.3, familiarity: 0.2, dislike: 0.1 }),
+};
+const socialLayer = createSocialContext({
+  roster: socialRoster,
+  relationships: socialGraph,
+  memories: { recall: () => [] },
+  rng: rngFrom(7),
+});
+const socialSeed = socialLayer.next({ speakerId: 'npc_01', listenerId: 'npc_02' });
+check('a social seed chooses someone who is not in the room', !!socialSeed
+  && socialSeed.subjectId !== 'npc_01'
+  && socialSeed.subjectId !== 'npc_02', JSON.stringify(socialSeed && [socialSeed.speakerId, socialSeed.listenerId, socialSeed.subjectId]));
+check('a social seed carries a claim and a point of view', !!socialSeed
+  && socialSeed.subjectName.length > 0
+  && socialSeed.claim.length > 10
+  && socialSeed.angle.length > 0, JSON.stringify(socialSeed));
+
+const socialLine = engine.line({
+  ...baseContext,
+  mode: 'opening',
+  category: 'gossip',
+  social: { ...socialSeed, category: 'gossip' },
+});
+check('the offline writer names the absent person', socialLine.text.includes(socialSeed.subjectName), socialLine.text);
+
+const socialChanges = [];
+const socialMemories = [];
+const socialPayloads = [];
+const socialConversations = createConversations({
+  roster: socialRoster,
+  ai: {
+    canGenerate: () => true,
+    availability: () => ({ configured: true, available: true, fallback: false, coolingDown: false }),
+    generate: async (payload) => {
+      socialPayloads.push(payload);
+      const subject = payload.social ? payload.social.subjectName : 'the day';
+      return { ok: true, text: `${subject} has been on my mind.` };
+    },
+  },
+  relationships: {
+    record: () => ({ category: 'friend', score: 35, trust: 0.55, familiarity: 0.5, dislike: 0.1 }),
+    applyConversation: () => ({ changes: [], tone: 0.2 }),
+    applySocialClaim: (args) => {
+      socialChanges.push(args);
+      return { npcId: args.listenerId, otherId: args.subjectId, delta: -0.4, kind: args.kind };
+    },
+  },
+  memories: {
+    recall: () => [],
+    consider: (session, options) => {
+      socialMemories.push(options);
+      return [];
+    },
+  },
+  news: null,
+  rng: rngFrom(51),
+});
+const socialNpcA = { config: { id: 'npc_01' }, sim: { state: 'talking', dialogue: null, partner: null }, x: 0, y: 0, room: null };
+const socialNpcB = { config: { id: 'npc_02' }, sim: { state: 'talking', dialogue: null, partner: null }, x: 4, y: 0, room: null };
+socialNpcA.sim.partner = socialNpcB;
+socialNpcB.sim.partner = socialNpcA;
+const socialSession = socialConversations.begin(socialNpcA, socialNpcB);
+check('a social conversation starts with a third villager on the table', !!socialSession && !!socialSession.social);
+if (socialSession) {
+  for (let i = 0; i < 40 && socialSession.status === 'active' && socialSession.messages.length < 3; i += 1) {
+    socialConversations.update(0.5);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  check('the first social prompt names the absent subject', socialPayloads[0]
+    && socialPayloads[0].social
+    && socialPayloads[0].social.subjectName === socialSession.social.subjectName,
+    JSON.stringify(socialPayloads[0] && socialPayloads[0].social));
+  check('the reply belongs to the listener, not the opener', socialPayloads[1]
+    && socialPayloads[1].social
+    && socialPayloads[1].social.orientation === 'reply'
+    && socialPayloads[1].social.speakerId === 'npc_02', JSON.stringify(socialPayloads[1] && socialPayloads[1].social));
+  const subject = socialSession.social.subjectId;
+  socialConversations.finish(socialSession, 'complete', 'test');
+  check('gossip changes the listener\'s view of the absent person', socialChanges.some((change) => change.subjectId === subject));
+  check('the social claim is handed to the memory layer', socialMemories.some((options) => (options.socialSeeds || []).length > 0));
+}
+
+const localMemories = createMemories({ storage: null, enabled: () => false });
+const memorySession = {
+  id: 'c_memory_social',
+  participants: [
+    { id: 'npc_01', name: 'Leonda' },
+    { id: 'npc_02', name: 'Michael' },
+  ],
+  messages: [
+    { speakerId: 'npc_01', speakerName: 'Leonda', text: 'Promise me you will not tell Chad about this.' },
+    { speakerId: 'npc_02', speakerName: 'Michael', text: 'I saw you at the workshop yesterday.' },
+    { speakerId: 'npc_02', speakerName: 'Michael', text: 'Do not be stupid about it.' },
+  ],
+};
+const kept = localMemories.consider(memorySession, {
+  profileA: { interests: [], social: { sociability: 0.4, newsInterest: 0.2 } },
+  profileB: { interests: [], social: { sociability: 0.5, newsInterest: 0.3 } },
+  relationshipChanges: [{ npcId: 'npc_01', interactions: 2 }],
+  disagreement: false,
+});
+check('a promise becomes a social memory', kept.some((memory) => memory.kind === 'promise'), kept.map((memory) => memory.kind).join(','));
+check('a witnessed moment is remembered as first-hand', kept.some((memory) => memory.kind === 'witnessed'), kept.map((memory) => memory.kind).join(','));
+check('an insult is remembered by the person it was aimed at', kept.some((memory) => memory.kind === 'negative' && memory.npcId === 'npc_01'), kept.map((memory) => `${memory.kind}:${memory.npcId}`).join(','));
 
 console.log(`\n${checks - failures}/${checks} checks passed.`);
 if (failures) {

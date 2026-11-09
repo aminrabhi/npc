@@ -182,6 +182,30 @@ try {
   check('prompt carries praised habits', /praised for: the sea/i.test(learnedPrompt[0].content), learnedPrompt[0].content);
   check('prompt carries the immediate lesson', /Drop that subject/i.test(learnedPrompt[1].content), learnedPrompt[1].content);
 
+  const socialPrompt = buildMessages({
+    speaker: {
+      name: 'Leonda',
+      motivation: 'Own a small repair shop.',
+      voice: 'Clipped and concrete.',
+      secret: 'She still sends money to her brother.',
+    },
+    listener: { name: 'Michael' },
+    mode: 'opening',
+    social: {
+      subjectName: 'Chad Gray',
+      claim: 'He laughed at her in front of everyone.',
+      sourceName: 'Tiny',
+      confidence: 0.45,
+      angle: 'rumor',
+      kind: 'rumor',
+    },
+  });
+  check('social prompt keeps the absent subject out of the room', /Chad Gray is not part of this conversation/i.test(socialPrompt[1].content), socialPrompt[1].content);
+  check('social prompt marks a rumour as uncertain', /only what you heard|not completely sure/i.test(socialPrompt[1].content), socialPrompt[1].content);
+  check('social prompt names where a claim came from', /heard that from Tiny/i.test(socialPrompt[1].content), socialPrompt[1].content);
+  check('social prompt carries motivation and voice', /What you want: Own a small repair shop/i.test(socialPrompt[0].content)
+    && /How you sound: Clipped and concrete/i.test(socialPrompt[0].content), socialPrompt[0].content);
+
   console.log('\nchat');
   const conversation = {
     conversationId: 'c_test_1',
@@ -221,6 +245,22 @@ try {
   });
   const learnedChatBody = await learnedChat.json();
   check('chat accepts learned topic context', learnedChat.status === 200 && learnedChatBody.ok === true, JSON.stringify(learnedChatBody.error || learnedChatBody));
+
+  const socialChat = await post(`${base}/api/chat`, {
+    ...conversation,
+    conversationId: 'c_test_social',
+    topic: 'what Chad did',
+    social: {
+      subjectName: 'Chad Gray',
+      claim: 'He laughed at Leonda in front of everyone.',
+      sourceName: 'Tiny',
+      confidence: 0.45,
+      angle: 'rumor',
+      kind: 'rumor',
+    },
+  });
+  const socialChatBody = await socialChat.json();
+  check('chat accepts structured social context', socialChat.status === 200 && socialChatBody.ok === true, JSON.stringify(socialChatBody.error || socialChatBody));
 
   const tooLong = await post(`${base}/api/chat`, { ...conversation, messageCount: 12 });
   const tooLongBody = await tooLong.json();
@@ -266,7 +306,7 @@ try {
 
   console.log('\nmemories (automatic persistence)');
   const memoryRows = [
-    { id: 'm_test_1', npcId: 'npc_04', aboutNpcId: 'npc_08', kind: 'shared', description: 'Found out Timmy likes bugs too.', importance: 0.6 },
+    { id: 'm_test_1', npcId: 'npc_04', aboutNpcId: 'npc_08', sourceNpcId: 'npc_07', kind: 'gossip', description: 'Tiny told me what Timmy said about the garden.', claim: 'Timmy called the garden a mess.', confidence: 0.55, importance: 0.6 },
     { id: 'm_test_2', npcId: 'npc_08', aboutNpcId: 'npc_04', kind: 'milestone', description: 'Met Mama Green properly.', importance: 0.7 },
   ];
   const memorySave = await (await post(`${base}/api/memories`, { memories: memoryRows })).json();
@@ -279,6 +319,11 @@ try {
   check('the villager\'s own memory is returned', memoryRead.memories.some((memory) => memory.npcId === 'npc_04'));
   check('shared memory about npc_04 is included', memoryRead.memories.some((memory) => memory.aboutNpcId === 'npc_04'));
   check('memories carry their importance', memoryRead.memories.every((memory) => typeof memory.importance === 'number'));
+  const socialMemory = memoryRead.memories.find((memory) => memory.id === 'm_test_1');
+  check('social memories keep their claim, source and confidence', socialMemory
+    && socialMemory.sourceNpcId === 'npc_07'
+    && socialMemory.claim === 'Timmy called the garden a mess.'
+    && socialMemory.confidence === 0.55, JSON.stringify(socialMemory));
 
   const badMemory = await post(`${base}/api/memories`, { memories: [{ description: 'no id' }] });
   check('malformed memory rejected', badMemory.status === 400);
