@@ -206,6 +206,11 @@ check('a fighter does not fall back to idle planning between blows', () => {
   assert.equal(idled, false);
 
   fighter.sim.fighting = false;
+  fighter.sim.scripting = true;
+  NPC.prototype.settle.call(fighter);
+  assert.equal(planned, false);
+
+  fighter.sim.scripting = false;
   NPC.prototype.settle.call(fighter);
   assert.equal(planned, true);
 });
@@ -322,10 +327,38 @@ check('a scripted conversation plays its own lines and finishes', () => {
   const result = social.playScript(npcs[0], npcs[1], 'Ada: Hello.\nBo: Hi.\nAda: Bye.');
   assert.equal(result.ok, true);
   assert.equal(result.lines, 3);
+  assert.equal(result.walking, false);
+  assert.equal(social.status().scriptPhase, 'lines');
   for (let i = 0; i < 80 && social.status().scripting; i += 1) social.update(0.25);
   assert.equal(social.status().scripting, false);
   assert.equal(applied.length, 1);
   assert.equal(applied[0].session.messages.length, 3);
+});
+
+check('a scripted conversation walks the pair together before speaking', () => {
+  const { social, npcs, applied } = makeSocial();
+  npcs[1].x = 320; // across the village, well outside speaking distance
+  const result = social.playScript(npcs[0], npcs[1], 'Ada: Hello.\nBo: Hi.');
+  assert.equal(result.ok, true);
+  assert.equal(result.walking, true);
+  assert.equal(social.status().scriptPhase, 'approach');
+  assert.ok(npcs[0].path.length > 0, 'the first villager has no route to the meeting point');
+  assert.ok(npcs[1].path.length > 0, 'the second villager has no route to the meeting point');
+  assert.equal(npcs[0].sim.dialogue, null);
+
+  // NPC.update normally moves the bodies; stand them close here to prove the script
+  // refuses to speak until they have arrived.
+  social.update(0.25);
+  assert.equal(social.status().scriptPhase, 'approach');
+  assert.equal(social.status().scriptIndex, 0);
+  npcs[1].x = npcs[0].x + 20;
+  social.update(0.25);
+  assert.equal(social.status().scriptPhase, 'lines');
+
+  for (let i = 0; i < 80 && social.status().scripting; i += 1) social.update(0.25);
+  assert.equal(social.status().scripting, false);
+  assert.equal(applied.length, 1);
+  assert.equal(applied[0].session.messages.length, 2);
 });
 
 console.log(`\n${passed} checks passed`);

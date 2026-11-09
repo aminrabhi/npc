@@ -506,7 +506,7 @@ export function createLifestyle({
   // the chat timer ends it properly.
   function continueFromWait(npc, sim) {
     // Fights and scripted scenes drive their own movement and hold their own timers.
-    if (sim.fighting || sim.stunned) return;
+    if (sim.fighting || sim.stunned || sim.scripting) return;
     const partner = sim.partner;
     if (sim.state === 'talking' && partner && partner.sim && partner.sim.state === 'talking') {
       stopForTalk(npc);
@@ -706,6 +706,14 @@ export function createLifestyle({
           npc.update(dt);
           continue;
         }
+        // A scripted scene owns these two bodies: social.js sets their paths and
+        // holds the pair at the meeting point. Do not let the day planner reclaim
+        // them while they walk over or speak.
+        if (sim.scripting) {
+          sim.timer = 600;
+          if (!npc.room) npc.update(dt);
+          continue;
+        }
         const before = sim.state;
         // The clock only runs once a villager has arrived: a room visit is not over
         // because the walk took a while, and a chat does not burn its time while the
@@ -763,6 +771,7 @@ export function createLifestyle({
       sim.partner = null;
       sim.session = null;
       sim.dialogue = null;
+      sim.scripting = false;
       sim.approachTime = 0;
       npc.path = [];
       npc.moving = false;

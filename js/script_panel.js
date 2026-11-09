@@ -9,6 +9,12 @@
 import { ensureDock, focusPanel } from './dock.js';
 import { ITEMS, itemLabel } from './items.js';
 
+function isTypingTarget(target) {
+  if (!target || !target.tagName) return false;
+  const tag = target.tagName.toLowerCase();
+  return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable;
+}
+
 export function createScriptPanel({ roster = [], social, getNpcs }) {
   if (!social) return null;
   const dock = ensureDock();
@@ -19,7 +25,7 @@ export function createScriptPanel({ roster = [], social, getNpcs }) {
   button.id = 'ed-script';
   button.dataset.panel = 'script-panel';
   button.textContent = 'Script';
-  button.title = 'Script a conversation, force an argument or a fight';
+  button.title = 'Script a conversation, force an argument or a fight (press . to play)';
   dock.buttons.appendChild(button);
 
   const section = document.createElement('div');
@@ -42,6 +48,7 @@ export function createScriptPanel({ roster = [], social, getNpcs }) {
         <button type="button" class="ed-btn" id="script-play">Play</button>
         <button type="button" class="ed-btn" id="script-stop">Stop</button>
       </div>
+      <div class="sim-note">Press . anytime to play this script. The panel can stay closed, and the pair will walk together first.</div>
       <div class="sim-row">
         <button type="button" class="ed-btn" id="script-argue">Force argument</button>
         <button type="button" class="ed-btn" id="script-fight">Force fight</button>
@@ -143,18 +150,25 @@ export function createScriptPanel({ roster = [], social, getNpcs }) {
     } else if (state.stunned) {
       note(`${state.stunnedName} is dazed for a moment.`);
     } else if (state.scripting) {
-      note(`playing ${state.scriptIndex}/${state.scriptLines}`);
+      note(state.scriptPhase === 'approach'
+        ? 'walking to each other'
+        : `playing ${state.scriptIndex}/${state.scriptLines}`);
     } else {
       note('idle');
     }
   }
 
-  playBtn.addEventListener('click', () => {
+  function playCurrent() {
     const chosen = pair();
-    if (!chosen) return;
+    if (!chosen) return false;
     const result = social.playScript(chosen.a, chosen.b, area.value);
-    note(result.ok ? `playing ${result.lines} lines` : result.reason);
-  });
+    note(result.ok
+      ? (result.walking ? `walking to each other · ${result.lines} lines` : `playing ${result.lines} lines`)
+      : result.reason);
+    return result.ok;
+  }
+
+  playBtn.addEventListener('click', playCurrent);
 
   stopBtn.addEventListener('click', () => {
     social.stopAll();
@@ -196,6 +210,16 @@ export function createScriptPanel({ roster = [], social, getNpcs }) {
     note('everyone has empty hands.');
   });
 
+  // The script is already in the panel's controls, so the same play action works
+  // with the dock closed. Form fields keep receiving a literal period.
+  window.addEventListener('keydown', (event) => {
+    if (event.defaultPrevented || event.repeat) return;
+    if (event.key !== '.' || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (isTypingTarget(event.target)) return;
+    event.preventDefault();
+    playCurrent();
+  });
+
   button.addEventListener('click', () => {
     section.hidden = !section.hidden;
     button.classList.toggle('is-on', !section.hidden);
@@ -217,5 +241,6 @@ export function createScriptPanel({ roster = [], social, getNpcs }) {
       button.classList.add('is-on');
       refreshOptions();
     },
+    play: playCurrent,
   };
 }

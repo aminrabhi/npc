@@ -120,6 +120,11 @@ const ARGUMENT_LINES = [
 
 const HOSTILE = new Set(['disliked', 'enemy']);
 const MAX_SCRIPT_LINES = 30;
+// A scripted pair starts speaking once they are this close. A diagonal neighbour is
+// about 22.6px apart, so 24 still counts as standing together.
+const SCRIPT_TALK_GAP = 24;
+const SCRIPT_APPROACH_LIMIT = 20; // seconds before falling back to talking where they are
+const SCRIPT_NO_ROUTE_WAIT = 2; // seconds to keep trying when neither villager has a route
 const MAX_HP = 100;
 const FLEE_HP = 30;
 const STUN_MS = 6000;
@@ -278,6 +283,81 @@ export function createSocial({
     abandon(a);
     abandon(b);
     if (lifestyle && lifestyle.pose) lifestyle.pose(a, b);
+  }
+
+  // A script owns the pair until it finishes. This flag keeps the lifestyle planner
+  // from sending either villager off on an errand while they are walking to the
+  // meeting point or holding the scene.
+  function holdForScript(npc, other, walking) {
+    const sim = simOf(npc);
+    if (sim) {
+      sim.scripting = true;
+      sim.state = walking ? 'walking' : 'talking';
+      sim.partner = other;
+      sim.timer = 600;
+      sim.approachTime = 0;
+      sim.session = null;
+      sim.dialogue = null;
+    }
+    npc.path = [];
+    npc.pendingRoom = null;
+    npc.approach = null;
+    npc.waitTime = 0;
+    npc.moving = false;
+    npc.idleGlance = 0;
+  }
+
+  function walkToward(npc, other) {
+    if (!npc || !other || !npc.village || !other.tile || npc.room || other.room) return false;
+    const path = findPath(npc.village, npc.tile, other.tile, { avoid: npc.village.doorways });
+    if (!path || !path.length) return false;
+    npc.path = path;
+    npc.pendingRoom = null;
+    npc.approach = null;
+    npc.waitTime = 0;
+    npc.moving = true;
+    return true;
+  }
+
+  function beginScriptLines(active) {
+    if (!active) return;
+    active.phase = 'lines';
+    active.elapsed = 0;
+    active.nextAt = 0;
+    active.approachTime = 0;
+    for (const [npc, other] of [[active.a, active.b], [active.b, active.a]]) {
+      npc.path = [];
+      npc.pendingRoom = null;
+      npc.approach = null;
+      npc.moving = false;
+      npc.waitTime = 0;
+      npc.idleGlance = 0;
+      const sim = simOf(npc);
+      if (sim) {
+        sim.scripting = true;
+        sim.state = 'talking';
+        sim.partner = other;
+        sim.timer = 600;
+        sim.approachTime = 0;
+        sim.session = null;
+        sim.dialogue = null;
+      }
+    }
+    if (lifestyle && lifestyle.pose) lifestyle.pose(active.a, active.b);
+  }
+
+  function approachScript(active, step) {
+    active.approachTime += step;
+    const gap = Math.hypot(active.a.x - active.b.x, active.a.y - active.b.y);
+    if (gap <= SCRIPT_TALK_GAP || active.approachTime >= SCRIPT_APPROACH_LIMIT) {
+      beginScriptLines(active);
+      return;
+    }
+    let routed = false;
+    for (const [npc, other] of [[active.a, active.b], [active.b, active.a]]) {
+      if (npc.path.length || walkToward(npc, other)) routed = true;
+    }
+    if (!routed && active.approachTime >= SCRIPT_NO_ROUTE_WAIT) beginScriptLines(active);
   }
 
   function releaseFighter(npc, f) {
@@ -577,25 +657,50 @@ export function createSocial({
     const lines = Array.isArray(source) ? source : parseScript(source, a, b);
     if (!lines.length) return { ok: false, reason: 'Write at least one line.' };
 
-    pose(a, b);
+    const canWalk = !!(lifestyle && lifestyle.pose && a.village && b.village
+      && !a.room && !b.room);
+    const gap = Math.hypot(a.x - b.x, a.y - b.y);
+    let walking = canWalk && gap > SCRIPT_TALK_GAP;
+
     script = {
       a,
       b,
       lines,
       spoken: [],
       index: 0,
+      phase: walking ? 'approach' : 'lines',
+      approachTime: 0,
       elapsed: 0,
       nextAt: 0,
       endAt: null,
       fightAfter,
     };
-    return { ok: true, lines: lines.length };
+
+    abandon(a);
+    abandon(b);
+    holdForScript(a, b, walking);
+    holdForScript(b, a, walking);
+    if (walking) {
+      const aRoute = walkToward(a, b);
+      const bRoute = walkToward(b, a);
+      if (!aRoute && !bRoute) {
+        beginScriptLines(script);
+        walking = false;
+      }
+    } else {
+      beginScriptLines(script);
+    }
+    return { ok: true, lines: lines.length, walking };
   }
 
   function finishScript() {
     if (!script) return;
     const { a, b, spoken, fightAfter } = script;
     script = null;
+    for (const npc of [a, b]) {
+      const sim = simOf(npc);
+      if (sim) sim.scripting = false;
+    }
     if (relationships && spoken.length) {
       relationships.applyConversation({
         participants: [
@@ -649,6 +754,10 @@ export function createSocial({
     if (script) {
       const { a, b } = script;
       script = null;
+      for (const npc of [a, b]) {
+        const sim = simOf(npc);
+        if (sim) sim.scripting = false;
+      }
       if (lifestyle) {
         lifestyle.handBack(a);
         lifestyle.handBack(b);
@@ -675,22 +784,25 @@ export function createSocial({
     if (stun && now() >= stun.until) clearStun();
 
     if (script) {
-      script.elapsed += step;
-      if (script.index < script.lines.length && script.elapsed >= script.nextAt) {
-        const entry = script.lines[script.index];
-        script.index += 1;
-        const speaker = entry.speakerId === (script.b.config && script.b.config.id) ? script.b : script.a;
-        const other = speaker === script.a ? script.b : script.a;
-        clearSay(other);
-        say(speaker, entry.text, 4200);
-        script.spoken.push({
-          speakerId: entry.speakerId,
-          text: entry.text,
-        });
-        script.nextAt = script.elapsed + Math.min(4.2, 1.5 + entry.text.length / 38);
-        if (script.index >= script.lines.length) script.endAt = script.nextAt + 0.7;
+      if (script.phase === 'approach') approachScript(script, step);
+      if (script && script.phase === 'lines') {
+        script.elapsed += step;
+        if (script.index < script.lines.length && script.elapsed >= script.nextAt) {
+          const entry = script.lines[script.index];
+          script.index += 1;
+          const speaker = entry.speakerId === (script.b.config && script.b.config.id) ? script.b : script.a;
+          const other = speaker === script.a ? script.b : script.a;
+          clearSay(other);
+          say(speaker, entry.text, 4200);
+          script.spoken.push({
+            speakerId: entry.speakerId,
+            text: entry.text,
+          });
+          script.nextAt = script.elapsed + Math.min(4.2, 1.5 + entry.text.length / 38);
+          if (script.index >= script.lines.length) script.endAt = script.nextAt + 0.7;
+        }
+        if (script && script.endAt !== null && script.elapsed >= script.endAt) finishScript();
       }
-      if (script && script.endAt !== null && script.elapsed >= script.endAt) finishScript();
     }
 
     if (fight) {
@@ -753,6 +865,7 @@ export function createSocial({
       scripting: !!script,
       scriptIndex: script ? script.index : 0,
       scriptLines: script ? script.lines.length : 0,
+      scriptPhase: script ? script.phase : null,
       scriptPair: script ? [script.a.name, script.b.name] : [],
     };
   }

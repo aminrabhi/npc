@@ -211,6 +211,9 @@ One debug surface, as before: the tile editor panel. It now has two extra button
   and ids, timestamps and duration, message count and status, relationship context,
   memories produced, news context, errors, NPC filter and text search, **Save to
   Supabase**, and the list of already-saved transcripts.
+* **Script**: choose two villagers, write `Name: line` rows, then play the scene. The
+  pair walks together before the first line. Press **.** at any time to play the current
+  script with the panel closed; the panel's selections and text are remembered.
 
 ## Tests
 

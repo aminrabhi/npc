@@ -105,11 +105,11 @@ export class NPC {
   // Arrived with nothing left to do: go back to the spot they belong to.
   settle() {
     this.moving = false;
-    // The social layer is steering this villager (a fight, a chase or a knockout).
-    // Falling back to the idle planner here is what made fighters reach each other
-    // and then stroll home in opposite directions, because squaring up clears their
-    // paths and looks exactly like a finished errand.
-    if (this.sim && (this.sim.fighting || this.sim.stunned)) return;
+    // The social layer is steering this villager (a fight, a chase, a knockout or a
+    // scripted scene). Falling back to the idle planner here is what made fighters
+    // reach each other and then stroll home in opposite directions, because squaring
+    // up clears their paths and looks exactly like a finished errand.
+    if (this.sim && (this.sim.fighting || this.sim.stunned || this.sim.scripting)) return;
     if (this.onPlan) {
       this.onPlan(this);
       return;
