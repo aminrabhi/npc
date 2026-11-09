@@ -127,6 +127,11 @@ try {
   check('a trailing character count is dropped', !/character/i.test(countedTail) && /right/.test(countedTail), countedTail);
   const quotedTwo = sanitiseLine('"Morning, you are up early."\n"The tomatoes look good."');
   check('quotes around each line are stripped', !/["“”]/.test(quotedTwo), quotedTwo);
+  const firstPerson = sanitiseMessages('Leonda is tired. Leonda has work to do. Leonda thinks it can wait.', { speakerName: 'Leonda' });
+  check('third-person self-reference is rewritten into the first person', firstPerson.length > 0
+    && !/Leonda/.test(firstPerson.join(' '))
+    && /I am tired/.test(firstPerson.join(' '))
+    && /I have work/.test(firstPerson.join(' ')), JSON.stringify(firstPerson));
   const split = sanitiseMessages('The weather has been strange lately and the tomatoes are late this year. I was thinking we should plant them earlier before the frost comes in and cover the beds at night so nothing freezes.');
   check('a long reply becomes a second message, not a cut-off', split.length >= 2, `${split.length}`);
   check('each split message still fits a bubble', split.every((part) => part.length <= 110), JSON.stringify(split));
@@ -156,6 +161,8 @@ try {
   check('prompt does not steer toward village or city life', !/\b(village|city)\b/i.test(prompt[0].content), prompt[0].content);
   check('prompt redirects away from where they live', /where you live/i.test(prompt[0].content));
   check('prompt locks the speaker to their own identity', /Only write your own words/i.test(prompt[0].content));
+  check('prompt requires first-person speech', /Speak in the first person/i.test(prompt[0].content)
+    && /Never refer to yourself by name/i.test(prompt[0].content), prompt[0].content);
   check('prompt names the speaker and listener without swapping them', /The only two people here are Mama Green and Timmy/i.test(prompt[1].content), prompt[1].content);
   check('prompt says who is being answered', /Timmy is the person you are talking with/i.test(prompt[1].content), prompt[1].content);
 

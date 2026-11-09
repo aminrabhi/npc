@@ -136,6 +136,11 @@ const coldOpening = engine.line({ ...baseContext, mode: 'opening', relationship:
 check('an enemy gets a cold greeting', fitsBubble(coldOpening.text) && coldOpening.text.length > 0, coldOpening.text);
 const bestReply = engine.line({ ...baseContext, relationship: best, category: 'bestfriend' });
 check('a best friend gets familiar talk', /you|me|we/i.test(bestReply.text) && fitsBubble(bestReply.text), bestReply.text);
+const greetingBank = [];
+for (let i = 0; i < 20; i += 1) {
+  greetingBank.push(engine.line({ ...baseContext, mode: 'opening', relationship: friend, category: 'greeting' }).text);
+}
+check('offline greetings never use the speaker name as a subject', greetingBank.every((text) => !/\bAda (is|was|has|had|does|did|can|will|would|thinks|says)\b/i.test(text)), greetingBank.join(' | '));
 
 const coldEnding = engine.line({ ...baseContext, mode: 'closing', mood: 'tense', relationship: enemy, category: 'ending' });
 check('a tense conversation ends coldly', /(done with this|finished here|do not bother|i am going|nothing else|leave it)/i.test(coldEnding.text), coldEnding.text);

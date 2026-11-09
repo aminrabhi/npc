@@ -36,9 +36,10 @@ export async function generateLine({
   messages,
   temperature = 0.85,
   timeoutMs = 9000,
+  speakerName = '',
   complete = chatCompletion,
 } = {}) {
-  const result = await complete({ messages, temperature, maxTokens: 96, timeoutMs });
+  const result = await complete({ messages, temperature, maxTokens: 96, timeoutMs, speakerName });
   return { ...result, cleaned: false, retried: false };
 }
 
@@ -182,6 +183,7 @@ export default route(async (req, res) => {
     const result = await generateLine({
       messages,
       temperature: Math.min(1, TEMPERATURE[body.mode] + (body.mood === 'tense' ? 0.05 : 0)),
+      speakerName: body.speaker.name,
     });
     sendJson(res, 200, {
       ok: true,

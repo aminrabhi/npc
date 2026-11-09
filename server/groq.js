@@ -126,11 +126,52 @@ function finishPiece(text, last) {
   return joined;
 }
 
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+// allam sometimes narrates the speaker instead of speaking as them: "Leonda is tired"
+// rather than "I am tired". The prompt forbids it, but a small model still slips. This
+// rewrites the common self-reference forms before the line reaches the bubble.
+const SELF_VERB_FORMS = [
+  ['is', 'I am'], ['was', 'I was'], ['has', 'I have'], ['had', 'I had'],
+  ['does', 'I do'], ['did', 'I did'], ['can', 'I can'], ['cannot', 'I cannot'],
+  ['will', 'I will'], ['would', 'I would'], ['could', 'I could'], ['should', 'I should'],
+  ['must', 'I must'], ['might', 'I might'], ['may', 'I may'],
+  ['isn\'t', 'I am not'], ['wasn\'t', 'I was not'], ['hasn\'t', 'I have not'],
+  ['hadn\'t', 'I had not'], ['doesn\'t', 'I do not'], ['didn\'t', 'I did not'],
+  ['can\'t', 'I cannot'], ['won\'t', 'I will not'], ['wouldn\'t', 'I would not'],
+  ['couldn\'t', 'I could not'], ['shouldn\'t', 'I should not'],
+  ['think', 'I think'], ['knows', 'I know'], ['wants', 'I want'], ['likes', 'I like'],
+  ['needs', 'I need'], ['feels', 'I feel'], ['gets', 'I get'], ['keeps', 'I keep'],
+  ['makes', 'I make'], ['takes', 'I take'], ['gives', 'I give'], ['says', 'I say'],
+  ['thinks', 'I think'], ['knew', 'I knew'], ['wanted', 'I wanted'],
+  ['liked', 'I liked'], ['needed', 'I needed'], ['got', 'I got'], ['kept', 'I kept'],
+  ['made', 'I made'], ['took', 'I took'], ['gave', 'I gave'], ['said', 'I said'],
+  ['saw', 'I saw'], ['heard', 'I heard'], ['felt', 'I felt'], ['went', 'I went'],
+  ['came', 'I came'], ['told', 'I told'], ['thought', 'I thought'],
+];
+
+function firstPersonText(text, speakerName) {
+  const name = String(speakerName || '').trim();
+  if (!name) return text;
+  const escaped = escapeRegExp(name);
+  let out = text;
+  // "Leonda and I" is still a speaker who has stepped outside themselves.
+  out = out.replace(new RegExp(`\\b${escaped}\\s+and\\s+I\\b`, 'gi'), 'we');
+  out = out.replace(new RegExp(`\\bI\\s+and\\s+${escaped}\\b`, 'gi'), 'we');
+  for (const [verb, replacement] of SELF_VERB_FORMS) {
+    out = out.replace(new RegExp(`\\b${escaped}\\s+${escapeRegExp(verb)}\\b`, 'gi'), replacement);
+  }
+  return out;
+}
+
 // The spoken line as one or more messages. The first is what the next request answers;
 // the rest are follow-ups the browser speaks as separate messages.
-export function sanitiseMessages(raw, { maxChars = LINE_BUDGET.chars, maxMessages = LINE_BUDGET.messages } = {}) {
+export function sanitiseMessages(raw, { maxChars = LINE_BUDGET.chars, maxMessages = LINE_BUDGET.messages, speakerName = '' } = {}) {
   if (typeof raw !== 'string') return [];
   let text = raw.replace(/\r/g, '');
+  text = firstPersonText(text, speakerName);
 
   // fenced code / stray markup
   text = text.replace(/```[\s\S]*?```/g, ' ');
@@ -187,8 +228,8 @@ export function sanitiseMessages(raw, { maxChars = LINE_BUDGET.chars, maxMessage
 }
 
 // One message only: kept for the shaping tests and any caller that wants a single line.
-export function sanitiseLine(raw, maxChars = LINE_BUDGET.chars) {
-  return sanitiseMessages(raw, { maxChars, maxMessages: 1 })[0] || '';
+export function sanitiseLine(raw, maxChars = LINE_BUDGET.chars, speakerName = '') {
+  return sanitiseMessages(raw, { maxChars, maxMessages: 1, speakerName })[0] || '';
 }
 
 export async function chatCompletion({
@@ -197,6 +238,7 @@ export async function chatCompletion({
   maxTokens = 120,
   timeoutMs = 14_000,
   signal = null,
+  speakerName = '',
 }) {
   const cfg = config();
   if (!cfg.groqKey) {
@@ -307,7 +349,7 @@ export async function chatCompletion({
 
   const choice = payload && Array.isArray(payload.choices) ? payload.choices[0] : null;
   const content = choice && choice.message ? choice.message.content : '';
-  const parts = sanitiseMessages(content);
+  const parts = sanitiseMessages(content, { speakerName });
   if (!parts.length) {
     throw new GroqError('Groq returned an empty or unusable reply.', {
       status: 502,

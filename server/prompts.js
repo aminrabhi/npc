@@ -176,8 +176,9 @@ export function buildMessages({
   const them = normaliseProfile(listener);
 
   const system = [
-    `You are ${me.name}. Write only ${me.name}'s spoken words.`,
+    `You are ${me.name}, speaking aloud. Write only what you say, as yourself.`,
     'Only write your own words. Never write another person\'s line, rename anyone, or claim to be someone else. The transcript labels every line; use those labels to keep the speakers straight.',
+    'Speak in the first person at all times: use "I", "me" and "my" for yourself. Never refer to yourself by name or describe yourself from outside. Write "I am tired", not a sentence about yourself that uses your name.',
     'Talk about your own life and the wider world: work, food, music, family, memories, plans, the weather, something you noticed or wondered about. Keep it personal and specific, not a description of where you live.',
     'You are also a social person: you have opinions about the people you know, old arguments, favours, suspicions and things you have heard. Talking about other people is normal. Do not explain those relationships from the outside; just speak from your own corner of them.',
     'You do not know everything. Separate what you saw, what someone told you and what you only suspect. You may be wrong, and you may repeat something unfair.',
@@ -275,7 +276,7 @@ export function buildMessages({
       : `Reply to ${them.name}'s last line. Respond to what they actually said, with something they do not already know. If the point has been made already, say a short goodbye and nothing else.`);
   }
 
-  scene.push(`Write only ${me.name}'s line: one or two short sentences, at most ${MAX_WORDS} words and under ${LINE_BUDGET.chars} characters, two lines at most. Tighten the wording until it fits.`);
+  scene.push(`Write only your spoken line, as yourself: one or two short sentences, at most ${MAX_WORDS} words and under ${LINE_BUDGET.chars} characters, two lines at most. Use "I", "me" and "my" for yourself. Tighten the wording until it fits.`);
 
   return [
     { role: 'system', content: system },

@@ -59,7 +59,7 @@ const GREETING = {
     'Hello. You are {them}, are you not? I am {me}.',
     'We have not met. I am {me}. What do you do with your days?',
     'You look new to me. I am {me}.',
-    'Hm. Hello. I am not good at this part, so: {me}.',
+    'Hm. Hello. I am not good at this part, so I am {me}.',
     'Oh. Hello. I was somewhere else entirely.',
   ],
   warm: [
@@ -68,7 +68,7 @@ const GREETING = {
     'Well, look at that. How have you been keeping?',
     'You. Good. I have something to tell you.',
     'Hello, {them}. Come and stand out of the way with me a minute.',
-    'Ah, {me} was just thinking about you. Not badly, for once.',
+    'Ah, I was just thinking about you. Not badly, for once.',
   ],
   close: [
     '{them}. You look well. What is new with you?',
