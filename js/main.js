@@ -600,6 +600,36 @@ async function init() {
     getNpcs: autonomousNpcs,
   });
 
+  // A clean view for watching the village: comma hides the four dock buttons and the
+  // two editor toggles without closing any panel that is already open. Pressing it
+  // again brings them back.
+  const chromeButtons = ['ed-sim', 'ed-logs', 'ed-rel', 'ed-script', 'edit-toggle', 'npc-toggle']
+    .map((id) => document.getElementById(id))
+    .filter(Boolean);
+  let chromeHidden = false;
+  function setChromeHidden(next) {
+    chromeHidden = !!next;
+    for (const button of chromeButtons) button.hidden = chromeHidden;
+  }
+  function isTypingTarget(target) {
+    if (!target || !target.tagName) return false;
+    const tag = target.tagName.toLowerCase();
+    return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable;
+  }
+  window.addEventListener('keydown', (event) => {
+    if (event.defaultPrevented || event.repeat) return;
+    if (event.key !== ',' || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (isTypingTarget(event.target)) return;
+    event.preventDefault();
+    setChromeHidden(!chromeHidden);
+  });
+  window.__chrome = {
+    hide: () => setChromeHidden(true),
+    show: () => setChromeHidden(false),
+    toggle: () => setChromeHidden(!chromeHidden),
+    hidden: () => chromeHidden,
+  };
+
   // Left click punishes, right click pets. The listener only acts when neither
   // editor is open, so painting tiles and dragging villagers are untouched.
   function uiBusy() {
