@@ -166,6 +166,28 @@ function firstPersonText(text, speakerName) {
   return out;
 }
 
+// Language models slip into narration even when told not to: "I walked up to him"
+// is a description of a movement, not something a villager says in a speech bubble.
+// These patterns deliberately only catch action-shaped sentences, so ordinary speech
+// such as "I walked to the market yesterday" survives.
+const ACTION_VERB = '(?:walk(?:s|ed|ing)?|step(?:s|ped|ping)?|move(?:s|d|ing)?|lean(?:s|ed|ing)?|turn(?:s|ed|ing)?|look(?:s|ed|ing)?|glance(?:s|d|ing)?|smile(?:s|d|ing)?|nod(?:s|ded|ding)?|sigh(?:s|ed|ing)?|shrug(?:s|ged|ging)?|approach(?:es|ed|ing)?|sit(?:s|ting)?|sat|stand(?:s|ing)?|stood|reach(?:es|ed|ing)?|take|takes|took|taking)';
+const ACTION_DIRECTION = '(?:up to|over to|towards?|closer|beside|next to|at (?:him|her|them|you)|to (?:him|her|them|you|face|look at|see)|down|back|away|a step|a breath|for (?:his|her|their|the))';
+const SELF_ACTION = new RegExp(`^I\\s+${ACTION_VERB}\\b[^.!?]{0,80}\\b${ACTION_DIRECTION}\\b`, 'i');
+const SELF_GESTURE = /^I\s+(?:put|place|placed|touch|touched|hold|held|pull|pulled|push|pushed)\b[^.!?]{0,60}\b(?:hand|arm|shoulder|face|sleeve)\b/i;
+const PURE_ACTION = /^I\s+(?:smile|smiles|smiled|nod|nods|nodded|sigh|sighs|sighed|shrug|shrugs|shrugged|laugh|laughs|laughed|grin|grins|grinned|frown|frowns|frowned|pause|pauses|paused)\s*[.!?]?$/i;
+const OTHER_ACTION = new RegExp(`^(?:He|She|They)\\s+${ACTION_VERB}\\b[^.!?]{0,60}\\b${ACTION_DIRECTION}\\b`, 'i');
+
+function isActionNarration(sentence, speakerName) {
+  const value = String(sentence || '').trim().replace(/^[\s"'“”‘’]+/, '').replace(/[\s"'“”‘’]+$/, '');
+  if (!value) return false;
+  if (SELF_ACTION.test(value) || SELF_GESTURE.test(value) || PURE_ACTION.test(value) || OTHER_ACTION.test(value)) return true;
+  if (speakerName) {
+    const name = escapeRegExp(String(speakerName).trim());
+    if (name && new RegExp(`^${name}\\s+${ACTION_VERB}\\b`, 'i').test(value)) return true;
+  }
+  return false;
+}
+
 // The spoken line as one or more messages. The first is what the next request answers;
 // the rest are follow-ups the browser speaks as separate messages.
 export function sanitiseMessages(raw, { maxChars = LINE_BUDGET.chars, maxMessages = LINE_BUDGET.messages, speakerName = '' } = {}) {
@@ -216,7 +238,7 @@ export function sanitiseMessages(raw, { maxChars = LINE_BUDGET.chars, maxMessage
     const parts = paragraph.match(/[^.!?…]+[.!?…]+["'”’)]*|[^.!?…]+$/g) || [paragraph];
     for (const part of parts) {
       const sentence = part.replace(/[ \t]+/g, ' ').trim();
-      if (sentence) sentences.push(sentence);
+      if (sentence && !isActionNarration(sentence, speakerName)) sentences.push(sentence);
     }
   }
   if (!sentences.length) return [];

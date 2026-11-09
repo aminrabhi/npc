@@ -133,6 +133,17 @@ const CASUAL = [
   'I keep coming back to {topic}. I do not know why.',
   'Do you ever think about {topic}? I do, too often.',
   'I have been thinking about {topic} again.',
+  'I— sorry, I lost my thread. What were we saying?',
+  'I mean, it is fine. It is not fine, but it is fine.',
+  'You know what? Forget it. It does not matter.',
+  'That came out wrong. I did not mean it like that.',
+  'I have no idea. I really do not.',
+  'Do not ask me. I am the last person who knows.',
+  'I keep going back and forth on it.',
+  'It sounds stupid when I say it out loud.',
+  'Maybe I am overthinking it. I usually am.',
+  'I had something clever to say and then forgot it.',
+  'What? No. Go on, then.',
 ];
 
 const FRIENDSHIP = [

@@ -22,8 +22,8 @@ const MAX_TURNS = 8;
 
 // What villagers actually talk about. Place talk is deliberately left out: the
 // village and any city stay background, while conversations stay with people,
-// memories, work and small personal things. One is drawn per conversation and
-// offered to the model as a subject.
+// memories, work and small personal things. A conversation either starts from
+// another person or draws one of these, so the general pool gets real use.
 export const TOPICS = [
   'the last film you watched and why it stuck with you',
   'a song from years ago you cannot get out of your head',
@@ -52,7 +52,6 @@ export const TOPICS = [
   'whether people can really change',
   'the best thing you have ever eaten',
   'a journey you would take again if you could',
-  'a recipe you have never managed to get right',
   'the last time you laughed until you cried',
   'a skill you wish you had learned',
   'something you changed your mind about',
@@ -62,6 +61,30 @@ export const TOPICS = [
   'what you would say to someone who is gone',
   'a habit you cannot break',
   'a small risk that turned out to be worth it',
+  'a neighbour who plays music at odd hours',
+  'a pair of shoes you refuse to throw away',
+  'the last time you were properly lost',
+  'a compliment you still think about',
+  'a food you pretended to like',
+  'the worst job you ever had',
+  'a promise someone broke',
+  'what you would do if you were not afraid',
+  'a joke you have never understood',
+  'the first record you bought',
+  'a shop that closed down',
+  'a person who talks too much',
+  'a thing you do when you are nervous',
+  'the last thing that made you angry',
+  'a place you have never been but miss',
+  'a gift you did not want',
+  'something you are superstitious about',
+  'the best seat in the house',
+  'a conversation you wish you had handled better',
+  'a talent nobody knows you have',
+  'a smell that reminds you of home',
+  'the worst advice you ever took',
+  'a question you are afraid to ask',
+  'the last time you were really surprised',
 ];
 const APPROACH_LIMIT = 12; // seconds the pair may take to reach each other
 const SESSION_LIMIT = 95; // hard cap, so a stalled request cannot freeze a villager
@@ -152,6 +175,10 @@ export function createConversations({
   // Optional override for tests. In the village this is created from the roster,
   // relationships and memories above.
   socialContext = null,
+  // How often a chat starts from another person rather than the general topic pool.
+  // Both paths are part of ordinary talk; always choosing gossip made the village
+  // feel like it had only one subject.
+  socialChance = 0.55,
   // Lessons from the player: subjects a villager has been punished for, and habits
   // they have been praised for. Absent in tests that only exercise the dialogue.
   lessons = null,
@@ -268,9 +295,9 @@ export function createConversations({
     const topic = pool[Math.floor(rng() * pool.length)] || '';
     if (!topic) return '';
     recentTopics.push(topic);
-    if (recentTopics.length > 8) recentTopics.shift();
+    if (recentTopics.length > 12) recentTopics.shift();
     // The engine keeps its own ninety-minute topic cooldown, which outlives the
-    // eight-topic window, so a subject does not come back the moment it falls out.
+    // recent-topic window, so a subject does not come back the moment it falls out.
     dialogue.noteTopic(topic);
     return topic;
   }
@@ -427,13 +454,16 @@ export function createConversations({
 
     counter += 1;
     const target = MIN_TURNS + Math.floor(rng() * (MAX_TURNS - MIN_TURNS + 1));
-    // Every chat starts with a person, not an abstract subject. The fallback topic is
-    // only used when there is nobody else in the village to talk about.
-    const socialSeed = socialFocus.next({
-      speakerId: a.id,
-      listenerId: b.id,
-      participantIds: [a.id, b.id],
-    });
+    // Most chats can drift toward another person, but not all of them: ordinary
+    // subjects are what make a village sound lived-in rather than like a rumour mill.
+    const gossipChance = Math.min(1, Math.max(0, Number(socialChance) || 0));
+    const socialSeed = socialFocus && rng() < gossipChance
+      ? socialFocus.next({
+        speakerId: a.id,
+        listenerId: b.id,
+        participantIds: [a.id, b.id],
+      })
+      : null;
     const topic = socialSeed ? socialSeed.title : pickTopic([a.id, b.id]);
     const mood = rng() < tensionChance(a.id, b.id) ? 'tense' : 'calm';
 

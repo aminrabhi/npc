@@ -332,6 +332,27 @@ if (session) {
 
 console.log('\ntopic pool');
 check('conversation topics avoid village and city life', TOPICS.every((topic) => !/\b(village|city|town)\b/i.test(topic)), TOPICS.filter((topic) => /\b(village|city|town)\b/i.test(topic)).join(' | '));
+check('the topic pool is broad and free of duplicates', TOPICS.length >= 50 && new Set(TOPICS).size === TOPICS.length, `${TOPICS.length} topics, ${new Set(TOPICS).size} unique`);
+
+const ordinaryConversations = createConversations({
+  roster,
+  ai: offlineAi,
+  relationships,
+  memories: memoryStore,
+  news: null,
+  socialChance: 0,
+  rng: rngFrom(61),
+  environment: () => ({ timeOfDay: 'morning', weather: null }),
+});
+const ordinaryNpcA = { config: { id: 'npc_a' }, sim: { state: 'talking', dialogue: null, partner: null }, x: 0, y: 0, room: null };
+const ordinaryNpcB = { config: { id: 'npc_b' }, sim: { state: 'talking', dialogue: null, partner: null }, x: 4, y: 0, room: null };
+ordinaryNpcA.sim.partner = ordinaryNpcB;
+ordinaryNpcB.sim.partner = ordinaryNpcA;
+const ordinarySession = ordinaryConversations.begin(ordinaryNpcA, ordinaryNpcB);
+check('a conversation can use the ordinary topic pool instead of gossip', !!ordinarySession
+  && !ordinarySession.social
+  && TOPICS.includes(ordinarySession.topic), JSON.stringify(ordinarySession && { social: ordinarySession.social, topic: ordinarySession.topic }));
+if (ordinarySession) ordinaryConversations.finish(ordinarySession, 'abandoned', 'test');
 
 console.log('\nlearned topics');
 const lessonStore = new Map();
@@ -552,6 +573,7 @@ const socialConversations = createConversations({
     },
   },
   news: null,
+  socialChance: 1,
   rng: rngFrom(51),
 });
 const socialNpcA = { config: { id: 'npc_01' }, sim: { state: 'talking', dialogue: null, partner: null }, x: 0, y: 0, room: null };

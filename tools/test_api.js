@@ -132,6 +132,16 @@ try {
     && !/Leonda/.test(firstPerson.join(' '))
     && /I am tired/.test(firstPerson.join(' '))
     && /I have work/.test(firstPerson.join(' ')), JSON.stringify(firstPerson));
+  const narrated = sanitiseMessages('I walked up to him. I did not know what to say.', { speakerName: 'Leonda' });
+  check('plain action narration is removed from a reply', narrated.length > 0
+    && !/walked up/i.test(narrated.join(' '))
+    && /did not know/i.test(narrated.join(' ')), JSON.stringify(narrated));
+  const actionOnly = sanitiseLine('I walked up to him.', 110, 'Leonda');
+  check('a reply that is only action narration is discarded', actionOnly === '', JSON.stringify(actionOnly));
+  const namedAction = sanitiseLine('Leonda smiled at him. I am fine.', 110, 'Leonda');
+  check('named action narration is discarded without losing the speech', !/smiled/i.test(namedAction) && /I am fine/i.test(namedAction), namedAction);
+  const spokenWalk = sanitiseLine('I walked to the market yesterday.');
+  check('ordinary first-person speech about walking is kept', /market/i.test(spokenWalk), spokenWalk);
   const split = sanitiseMessages('The weather has been strange lately and the tomatoes are late this year. I was thinking we should plant them earlier before the frost comes in and cover the beds at night so nothing freezes.');
   check('a long reply becomes a second message, not a cut-off', split.length >= 2, `${split.length}`);
   check('each split message still fits a bubble', split.every((part) => part.length <= 110), JSON.stringify(split));
@@ -163,6 +173,10 @@ try {
   check('prompt locks the speaker to their own identity', /Only write your own words/i.test(prompt[0].content));
   check('prompt requires first-person speech', /Speak in the first person/i.test(prompt[0].content)
     && /Never refer to yourself by name/i.test(prompt[0].content), prompt[0].content);
+  check('prompt forbids plain action narration', /no plain narration/i.test(prompt[0].content)
+    && /Do not describe walking over/i.test(prompt[0].content), prompt[0].content);
+  const openingPrompt = buildMessages({ speaker: { name: 'Mama Green' }, listener: { name: 'Timmy' }, mode: 'opening' });
+  check('opening prompt does not suggest a walking-up action', !/walked up/i.test(openingPrompt[1].content), openingPrompt[1].content);
   check('prompt names the speaker and listener without swapping them', /The only two people here are Mama Green and Timmy/i.test(prompt[1].content), prompt[1].content);
   check('prompt says who is being answered', /Timmy is the person you are talking with/i.test(prompt[1].content), prompt[1].content);
 
