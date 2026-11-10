@@ -1,278 +1,161 @@
 # Simulora
 
-A pixel village where ten villagers live out a day: walking, watching clouds, chilling
-in their own rooms, sleeping in their own beds, and talking to each other. Part 1 built
-the village, the tile editor and the lifestyle simulation. Part 2 makes those villagers
-into people: distinct editable personalities, real conversations through Groq Cloud,
-directional relationships that evolve, memories that persist, and the occasional BBC
-headline.
+Simulora is a pixel village that keeps living when you stop touching it.
 
-The art is the supplied asset pack only. Nothing here draws artwork.
+Ten residents wake up, follow their own routines, visit each other's homes, argue,
+gossip and remember what was said. You can watch from above, spawn into the village as
+Amin, talk to whoever is nearby, or open the tools and rewrite a personality, repaint
+the map, or script a scene.
 
-## Deploy it yourself
+It is a browser-based simulation built with vanilla JavaScript and a canvas, with a
+small server for optional model-written dialogue and persistence.
 
-`index.html` is at the repository root, so there is nothing to build:
+## What is in the village
 
-1. In Vercel: **Add New → Project → Import** this repository.
-2. Framework Preset **Other**, Build Command empty, Output Directory empty, Root
-   Directory `.`.
-3. **Settings → Environment Variables**: add `GROQ_API_KEY`, `SUPABASE_URL` and
-   `SUPABASE_SERVICE_ROLE_KEY` (and optionally `GROQ_MODEL`, `SUPABASE_ANON_KEY`) for
-   Production and Preview, then **Deploy**.
-4. Run `npm run check:live -- https://your-app.vercel.app` to confirm the keys reached
-   the functions and the schema is applied.
+- **A day that runs itself.** Each resident has a home and a daily plan. They move
+  between rooms, use beds and furniture, react to the clock and weather, and make their
+  own decisions about when to seek someone out.
+- **Conversations with consequences.** Villagers approach each other, start with a
+  person or an ordinary topic, and carry the result back into their relationships. A
+  conversation can be friendly, awkward, curious or hostile without being scripted in
+  advance.
+- **Directional relationships.** Every resident has a private opinion of every other
+  resident: 90 one-way relationships, not a single shared score. A can adore B while B
+  merely tolerates A, and both views can drift in different directions.
+- **Memory and gossip.** Residents remember personal history, disagreements, promises,
+  secrets and things they only heard second-hand. A rumour can change what someone
+  thinks about a person who was never in the room.
+- **Ordinary life and the news.** The village reads BBC headlines, but only residents
+  who care about the news bring it up, and they only know what the headline said.
+- **A playable character.** Amin Rabhi can be summoned into the village, walked around,
+  and used to join conversations as a participant rather than an observer.
+- **Tools for changing the village.** A tile editor, an NPC studio, a conversation log,
+  a relationship graph, simulation controls and a small scripting panel are all built
+  in.
 
-A Hobby team with a private repository only builds commits whose author is the team
-owner. A commit made by a bot or another account is reported as "blocked because the
-commit author did not have contributing access", so author commits with the same Git
-identity as your Vercel login, or upgrade the project to Pro.
+## Run it locally
 
-Secrets belong in the Vercel dashboard, never in a committed file. For local work,
-`cp .env.example .env` and fill that copy in: `.env` is git-ignored, and `.env.example`
-holds only placeholders.
-
-## What runs where
-
-| Layer | Files | Notes |
-| --- | --- | --- |
-| The village | `index.html`, `js/*.js`, `css/style.css`, `assets/`, `data/` | Static, no build step |
-| Serverless API | `api/*.js` | Vercel Node functions |
-| Server logic | `server/*.js` | Groq client, prompts, Supabase REST, news, validation |
-| Database | `supabase/schema.sql` | Run once in the Supabase SQL editor |
-| Local dev server | `tools/api_server.js` | Static files **and** the same `api/*` handlers |
-
-The browser never sees a key. It talks to `/api/chat`, `/api/memories`,
-`/api/relationships`, `/api/conversations`, `/api/news` and `/api/status`, and those
-functions hold the Groq and service-role credentials.
-
-## Setup
-
-### 1. Groq
-
-1. Create a key at <https://console.groq.com/keys>.
-2. Set `GROQ_API_KEY` in Vercel (or in a local `.env`).
-3. Leave `GROQ_MODEL` unset, or set it to `allam-2-7b`.
-
-`allam-2-7b` is the default conversation model and lives in exactly one place:
-`server/env.js` (`DEFAULT_MODEL`), overridable with `GROQ_MODEL`. If the model is
-unavailable the API returns the actual Groq error, with the configuration point named;
-it is never silently swapped for another model.
-
-### 2. Supabase
-
-1. Create a project and copy the URL, anon key and service-role key.
-2. Run `supabase/schema.sql` in the SQL editor. It creates the village tables, indexes,
-   and turns on RLS with no policies for `anon`/`authenticated`, so only the service
-   role (and therefore only the server) can read or write.
-3. Set `SUPABASE_URL`, `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY`.
-
-Until this is done the village still runs: dialogue falls back to clearly-labelled
-offline lines, and relationships and memories are kept in the browser only. The
-Conversation Logs panel says `persistence off: no Supabase` rather than failing quietly.
-
-### 3. Vercel
-
-Import the repository as an "Other" project. Zero config is enough: `api/` becomes
-functions, everything else is served statically. `vercel.json` only raises the function
-duration to 30 s and marks the API as no-store. Set the environment variables above for
-Production (and Preview if you want previews to talk).
-
-#### Environment variables
-
-```
-GROQ_API_KEY=
-GROQ_MODEL=allam-2-7b
-SUPABASE_URL=
-SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=
-```
-
-`.env.example` has the same names with placeholders. `.env` is git-ignored.
-
-### 4. Local development
+Simulora needs Node.js 20 or newer. There is no build step and there are no npm
+dependencies to install.
 
 ```bash
-cp .env.example .env      # fill in what you have
-npm run dev               # http://localhost:3000
+git clone https://github.com/aminrabhi/npc.git
+cd npc
+npm run dev
 ```
 
-`tools/api_server.js` serves the static village and mounts the real API routes, reading
-`.env` itself. There are no npm dependencies.
+Open <http://localhost:3000>. The local server serves the site and mounts the API routes
+from `api/`.
 
-### 5. Verify a real deployment
+The village works without any credentials: conversations fall back to the procedural
+writer, and memories and relationships stay in the browser. To enable model-written
+dialogue or Supabase persistence, copy the example environment file and fill in the
+services you want to use:
 
 ```bash
-npm run check:live -- https://your-app.vercel.app
+cp .env.example .env
 ```
 
-It reads only: no rows are written and no transcript is saved. It reports, with the fix
-for each failure:
+`GROQ_API_KEY` enables model-written conversations. The Supabase settings enable
+server-side persistence, with `supabase/schema.sql` containing the table definitions.
+The browser never receives those keys. The real `.env` is ignored by git.
 
-1. whether `GROQ_API_KEY` and the Supabase keys reached the functions,
-2. whether the configured model actually answers (it prints the real line it got back,
-   the model name and the token usage),
-3. whether `supabase/schema.sql` has been applied, by reading each of the five tables,
-4. whether BBC headlines are loading.
+## Controls
 
-Run it once after the first deploy, and again whenever a key is rotated. Four green
-lines mean the village is talking with real Groq lines and persisting for real.
+The debug buttons start hidden so the village is unobstructed.
 
-## The important distinction
+| Input | Action |
+| --- | --- |
+| `,` | Show or hide Console, Logs, Relations, Script, Edit tiles and NPC studio |
+| `I` | Summon or dismiss Amin Rabhi |
+| `WASD` or arrow keys | Walk while playing as Amin |
+| `/` | Open the player chat while playing |
+| `Enter` | Send a chat line |
+| `Esc` | Close a chat, editor or studio panel |
+| `.` | Replay the scene currently set up in the Script panel |
+| `Ctrl/Cmd + Z` | Undo in the tile editor |
 
-**Automatic**, during ordinary simulation, with no user interaction:
+Clicking a villager punishes them; right-clicking pets them. The tile editor, NPC studio
+and player chat pause the normal click interactions while open.
 
-* NPC memories (shared, personal, milestones, disagreements, news, rumours, secrets, promises, insults and grudges)
-* Relationship scores, trust, familiarity, categories, best-friend status
-* Directional opinion changes caused by gossip, with the claim, source and confidence kept
+## How a conversation happens
 
-**Manual**, and only this:
+1. A resident decides to talk. The candidate must be free, nearby, reachable and not
+   already on cooldown with them.
+2. They walk to a tile beside the other person, stop, and face each other.
+3. `js/social_context.js` sometimes gives the conversation a social seed: an absent
+   person, a claim, the source of that claim and the speaker's confidence in it. Other
+   conversations begin with an ordinary topic.
+4. `js/conversation.js` manages the turn-taking. With Groq configured, each line is
+   requested by the server using the speaker's personality, voice, current motivation,
+   relationship, relevant memories, news context and the last few turns.
+5. The closing turn is generated as a goodbye. Relationships, opinions and memories are
+   updated when the conversation lands, whether or not the transcript is ever saved.
 
-* Conversation transcripts. They are logged locally for the panel, and written to
-  Supabase only when someone presses **Save to Supabase** in Conversation Logs.
+The offline writer in `js/offline_dialogue.js` uses the same character profiles and
+social context when no model is configured. Offline lines are labelled as such rather
+than presented as generated dialogue.
 
-Saving a transcript does not create duplicate memories or move a relationship again, and
-not saving one does not cost the villagers anything: memory and relationship persistence
-never waits on transcript persistence.
+## What gets saved
 
-## Conversation flow
+By default, browser storage holds the village's evolving state: relationships,
+memories, personalities, homes, player character choices and local conversation logs.
+Clearing site data resets that local history.
 
-`js/conversation.js` owns a conversation; `js/lifestyle.js` still owns the body.
+When Supabase is configured, memories and directional relationship changes persist on
+the server automatically. Conversation transcripts are the deliberate exception: they
+are written only when someone presses **Save to Supabase** in the Conversation Logs
+panel. A saved transcript does not replay its relationship or memory changes.
 
-1. A villager decides to talk. Candidates must be free, close enough, reachable, off a
-   doorstep, and not on cooldown with the initiator.
-2. They walk to a tile beside the partner, stop, and the two face each other.
-3. A session is created with a random target of 5-10 total messages.
-4. Each turn asks `/api/chat` for one line for the current speaker, with that speaker's
-   personality, motivation, voice, the relationship, relevant memories, the social seed
-   (subject, claim, source and confidence), at most two headlines and the last eight
-   turns. allam-2-7b has a 4k context, so the prompt is deliberately small.
-5. A social conversation may pivot once after a few turns, bringing in a second absent
-   villager. The seed is also kept for the memory pass, so the claim can survive the
-   conversation even when the transcript is never saved.
-6. The final message is generated in `closing` mode, so conversations end on a goodbye.
-7. Both villagers are handed back and resume the day. Cooldowns depend on category,
-   sociability and a little randomness.
+## Project layout
 
-If Groq fails three times in a row the chat ends, and every line that came from a
-fallback is badged `offline` in the logs. A failed request is never disguised as a
-generated line.
+| Path | What lives there |
+| --- | --- |
+| `index.html`, `css/`, `js/` | The no-build browser app: canvas rendering, simulation, UI and local state |
+| `data/` | The village map, homes and resident roster |
+| `assets/` | Tilemap, character sprites, furniture, UI images, fonts and icons |
+| `server/` | Prompts, model client, relationship rules, news fetching and provider validation |
+| `api/` | Thin HTTP route handlers used by the local server |
+| `supabase/` | Database schema for optional persistence |
+| `tools/` | Local server, syntax checks, test suites and the original map-building helpers |
 
-## Relationships and the social layer
+The simulation code is deliberately split from the presentation code. `js/main.js`
+boots the world and wires the systems together; `js/lifestyle.js` owns the daily plan;
+`js/npc.js` draws and moves individual villagers; and the panels under `js/*_panel.js`,
+`js/conv_logs.js` and `js/npc_studio.js` provide the tooling around it.
 
-Each of the ten villagers now has a full, hand-written life in `js/cast.js`: what they
-want, what they value, what they fear, a private secret, a speaking voice, and a private
-opinion of all nine other villagers. That is 90 one-way opinions. The relationship store
-seeds one row per direction from those opinions under `aivillage.relationships.v2`, so
-Leonda's view of Chad and Chad's view of Leonda can start differently and drift further
-apart. The old symmetrical graph is deliberately not loaded.
-
-Conversations usually start with a person rather than a topic. `js/social_context.js`
-picks a third villager who is not in the room and an angle: criticise, defend, question,
-pass on a rumour, share a confidence, reopen a grudge, admit envy, notice something or
-compare. The seed carries the claim, where it came from, how confident the speaker is,
-and how each participant already feels about the subject. A reply is oriented to the
-person actually speaking, so the listener does not inherit the opener's line.
-
-Not every villager knows everything. A claim can be a fact the speaker witnessed, an
-opinion, or a rumour they only heard. The offline writer has separate third-person
-banks for these, and the model prompt is given the source and confidence so it can
-hedge, repeat or disagree rather than reporting gossip as established truth.
-
-Directional: `npc_id` + `other_id` is the key, so A can adore B while B merely tolerates
-A. Changes per conversation are small on purpose (single digits), asymmetric (weighted
-by the viewer's sociability and trust), and categories are derived from the numbers by
-one formula (`server/relationships.js`, mirrored in `js/relationships.js`). Villagers can
-reach `friend`, `close friend` and `best friend`, and friendships make them seek each
-other out through the partner-appeal score used when choosing who to talk to.
-
-When a rumour or opinion is actually spoken, the listener's private record of the absent
-person moves a little, weighted by how much they trust the speaker and how confident the
-claim was. That record, the claim and its source are what make a later argument
-possible. The effect is intentionally smaller than a face-to-face conversation; gossip
-colours a view rather than replacing it.
-
-## News
-
-Headlines come from the BBC's own RSS feeds (`feeds.bbci.co.uk/news/rss.xml` and category
-feeds), cached for 15 minutes, mirrored to `village_news`, with the cached copy used when
-a refresh fails. Only headline, summary and link are stored; article bodies are never
-fetched or sent to the model. The panel credits BBC News with a link, which is what the
-BBC's terms require for displaying the feeds. There is no scraping and no BBC API is
-assumed.
-
-A villager only raises the news if their `newsInterest` says so, headlines are not
-repeated until the recent list rotates, and the prompt tells them they only know what the
-headline said.
-
-## Play as a character
-
-The **NPC studio** edits the roster. Choose an existing villager, or **+ New** to make
-one, then press **Play as** to take over their body. **Stop** hands them back to the
-village simulation without losing their relationships or memories.
-
-**Amin Rabhi** is the baked hero character. He is not part of the autonomous village
-simulation and does not spawn on page load. Press **I** to spawn him on a random bed;
-press **I** again to remove him. Walk around the room with **WASD** or the arrow keys,
-using the room's furniture collision. Walk into the doorway to step outside, and walk
-back into it from the street to enter the house again. An existing studio-created
-player character still restores normally, but the baked hero always waits for **I**.
-
-While playing:
-
-* **WASD** or the **arrow keys** walk around, using the village's normal collision.
-* **/** opens the one-line chat menu. Pick a nearby villager to start a conversation, or
-  join one that is already in progress.
-* Type a line and press **Enter** to send it. Pressing **Enter** with an empty input
-  closes the chat and leaves the conversation. **Esc** also closes it.
-* The NPCs answer through the same conversation engine, memories and relationship
-  changes as their own chats.
-
-The **Export** button in the playable-character section produces a `PLAYER_CHARACTER`
-entry. Paste it back in chat to hard-code that character, or use **Export NPC code** to
-take the whole roster. The character and the played character id are kept in local
-storage, so a refresh spawns the same character again until they are stopped.
-
-## Debug interface
-
-One debug surface, as before: the tile editor panel. It now has two extra buttons.
-
-* **Sim**: time and weather overrides, villager states (Part 1).
-* **Logs**: live conversations, recent conversations, complete transcripts, participants
-  and ids, timestamps and duration, message count and status, relationship context,
-  memories produced, news context, errors, NPC filter and text search, **Save to
-  Supabase**, and the list of already-saved transcripts.
-* **Script**: choose two villagers, write `Name: line` rows, then play the scene. The
-  pair walks together before the first line. Press **.** at any time to play the current
-  script with the panel closed; the panel's selections and text are remembered.
+The Python map-building helpers under `tools/` expect the original asset download
+unpacked in `assets_pack/`. That folder is local-only; the generated map data and runtime
+sprites are already tracked.
 
 ## Tests
 
+The Node test suites use local test doubles, so they do not spend model credits or need
+a configured production service.
+
 ```bash
-npm run check         # syntax-check every module and route
-npm run test:api      # API routes against local Groq/Supabase/BBC test doubles
-npm run test:offline  # the procedural writer, fallback ladder and social memory
-npm run test:social   # fighting, petting and scripted conversations
-npm run check:live    # a real deployment with real keys (see Setup, step 5)
+npm run check         # syntax-check every browser module and API route
+npm run test:api      # API routes, validation, fallbacks and persistence
+npm run test:offline  # the procedural writer and conversation seeding
+npm run test:social   # fights, petting and scripted conversations
 ```
 
-`tools/test_api.js` starts its own doubles (`tools/mock_backends.js`) and two servers,
-one configured and one deliberately empty, and covers validation, the message cap, model
-misconfiguration, duplicate prevention, directional relationships, transcript save and
-retrieval, news caching and the "no keys yet" errors.
-
-Browser verification is `tools/verify_part2.py` (Playwright, needs the screenshot venv),
-run against a configured server on `:3001` and an unconfigured one on `:3000`. The Part 1
-suites (`tools/test_editor.py`, `test_rooms.py`, `test_doors.py`, `npc_check.py`) still
-apply and still pass.
+Additional Playwright checks for the editor, rooms, doors and the NPC studio live under
+`tools/` and require a browser test environment.
 
 ## Notes and limits
 
-* Dialogue quality depends on the configured model; `allam-2-7b` is small and the prompt
-  is tuned to keep it to one short, in-character sentence.
-* Sprites only face left and right, so a pair that has to stand one above the other
-  mirrors outward instead of literally looking up or down.
-* Relationships start from the cast's private opinions, not from a clean slate or a
-  symmetrical graph; day one already has old warmth, wariness and unfinished business.
-* Fighting already exists as a social consequence; this pass adds the slower layer that
-  leads there: grudges, suspicion, gossip and a private opinion that can change without
-  the other person ever hearing about it.
+- Dialogue quality depends on the configured model. When one is configured, the default
+  is a small model chosen to keep replies short and conversational; the offline writer
+  is the fallback, not a hidden second model.
+- Sprites face left and right only, so villagers standing above or below each other
+  mirror outward rather than literally looking up or down.
+- Relationships do not begin from a clean slate. The cast already has old warmth,
+  wariness and unfinished business.
+- The village is a simulation to watch and prod, not a game with a win condition.
+
+## Credits
+
+The pixel art is the Sunnyside World asset pack by Daniel Diggle; no artwork is drawn by
+Simulora itself. News headlines come from the BBC's public RSS feeds and link back to the
+BBC. The interface uses Pixelify Sans.

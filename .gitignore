@@ -14,3 +14,9 @@ __pycache__/
 # Dependency and deployment scratch
 node_modules/
 .vercel/
+
+# Local captures, unpacked source art and original uploads
+artifacts/
+assets_pack/
+IMG_*.png
+Sunnyside_World_ASSET_PACK_V2.1.zip
