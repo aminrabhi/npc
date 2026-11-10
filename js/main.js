@@ -600,17 +600,18 @@ async function init() {
     getNpcs: autonomousNpcs,
   });
 
-  // A clean view for watching the village: comma hides the four dock buttons and the
-  // two editor toggles without closing any panel that is already open. Pressing it
-  // again brings them back.
+  // A clean view for watching the village: the four dock buttons and the two editor
+  // toggles start hidden, and comma reveals them without closing any panel that is
+  // already open. Pressing it again hides them.
   const chromeButtons = ['ed-sim', 'ed-logs', 'ed-rel', 'ed-script', 'edit-toggle', 'npc-toggle']
     .map((id) => document.getElementById(id))
     .filter(Boolean);
-  let chromeHidden = false;
+  let chromeHidden = true;
   function setChromeHidden(next) {
     chromeHidden = !!next;
     for (const button of chromeButtons) button.hidden = chromeHidden;
   }
+  setChromeHidden(true);
   function isTypingTarget(target) {
     if (!target || !target.tagName) return false;
     const tag = target.tagName.toLowerCase();
